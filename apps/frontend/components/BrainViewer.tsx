@@ -50,7 +50,7 @@ function BrainModel({ url, clippingEnabled, clippingPosition }: BrainModelProps)
           color: 0xcccccc,
           specular: 0x444444,
           shininess: 20,
-          flatShading: true,
+          flatShading: false,
           side: THREE.DoubleSide,
           depthWrite: true,
           clippingPlanes: clippingEnabled ? [clippingPlane] : [],

@@ -126,11 +126,14 @@ def process_segmentation_to_mesh(job_id: str, data: np.ndarray, spacing: tuple, 
                 faces=faces,
                 vertex_normals=normals
             )
-            
-            # Simplify large meshes
-            if len(mesh.faces) > 50000:
+
+            # Apply Laplacian smoothing to reduce voxel blockiness
+            trimesh.smoothing.filter_laplacian(mesh, iterations=5)
+
+            # Simplify large meshes (higher limit for better quality)
+            if len(mesh.faces) > 200000:
                 try:
-                    mesh = mesh.simplify_quadric_decimation(50000)
+                    mesh = mesh.simplify_quadric_decimation(200000)
                     print(f"[{job_id}] Label {label}: Simplified to {len(mesh.faces)} faces")
                 except Exception as simp_err:
                     print(f"[{job_id}] Label {label}: Simplification failed: {simp_err}")
@@ -192,10 +195,13 @@ def process_intensity_to_mesh(job_id: str, data: np.ndarray, spacing: tuple) -> 
                 vertex_normals=normals
             )
 
-            # Simplify if too many faces
-            if len(mesh.faces) > 100000:
+            # Apply Laplacian smoothing to reduce voxel blockiness
+            trimesh.smoothing.filter_laplacian(mesh, iterations=10)
+
+            # Simplify if too many faces (higher limit for better quality)
+            if len(mesh.faces) > 300000:
                 try:
-                    mesh = mesh.simplify_quadric_decimation(100000)
+                    mesh = mesh.simplify_quadric_decimation(300000)
                     print(f"[{job_id}] Layer {i+1}: Simplified to {len(mesh.faces)} faces")
                 except Exception as simp_err:
                     print(f"[{job_id}] Layer {i+1}: Simplification failed: {simp_err}")
