@@ -12,11 +12,18 @@ router = APIRouter()
 
 @router.post("/", response_model=PatientResponse, status_code=201)
 async def create_patient(patient: PatientCreate):
-    """Create a new patient."""
+    """Create a new patient with auto-generated patient_id."""
     try:
+        # Find the highest patient_id and increment by 1
+        last_patient = await Database.patients.find_one(
+            sort=[("patient_id", -1)]
+        )
+        next_patient_id = 0 if last_patient is None else last_patient["patient_id"] + 1
+
         # Create patient document
         patient_doc = {
             **patient.model_dump(),
+            "patient_id": next_patient_id,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -31,7 +38,7 @@ async def create_patient(patient: PatientCreate):
     except DuplicateKeyError:
         raise HTTPException(
             status_code=400,
-            detail=f"Patient with ID '{patient.patient_id}' already exists",
+            detail=f"Patient with ID '{next_patient_id}' already exists",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create patient: {str(e)}")
@@ -67,7 +74,7 @@ async def list_patients(
 
 
 @router.get("/{patient_id}", response_model=PatientResponse)
-async def get_patient(patient_id: str):
+async def get_patient(patient_id: int):
     """Get a single patient by ID."""
     try:
         patient = await Database.patients.find_one({"patient_id": patient_id})
@@ -84,7 +91,7 @@ async def get_patient(patient_id: str):
 
 
 @router.put("/{patient_id}", response_model=PatientResponse)
-async def update_patient(patient_id: str, patient_update: PatientUpdate):
+async def update_patient(patient_id: int, patient_update: PatientUpdate):
     """Update patient information."""
     try:
         # Build update document (only include fields that were provided)
@@ -116,7 +123,7 @@ async def update_patient(patient_id: str, patient_update: PatientUpdate):
 
 
 @router.delete("/{patient_id}", status_code=204)
-async def delete_patient(patient_id: str):
+async def delete_patient(patient_id: int):
     """Delete a patient."""
     try:
         # Check if patient has any medical cases

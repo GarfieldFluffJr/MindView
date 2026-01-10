@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
+import PatientSelection from "@/components/PatientSelection";
 import FileUpload from "@/components/FileUpload";
 import ProcessingStatus from "@/components/ProcessingStatus";
 import { uploadFile, getMeshUrl } from "@/lib/api";
@@ -15,14 +16,26 @@ const BrainViewer = dynamic(() => import("@/components/BrainViewer"), {
   ),
 });
 
-type AppState = "idle" | "uploading" | "processing" | "viewing" | "error";
+type AppState =
+  | "patient-selection"
+  | "file-upload"
+  | "uploading"
+  | "processing"
+  | "viewing"
+  | "error";
 
 export default function Home() {
-  const [state, setState] = useState<AppState>("idle");
+  const [state, setState] = useState<AppState>("patient-selection");
+  const [patientId, setPatientId] = useState<number | null>(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [meshUrl, setMeshUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+
+  const handlePatientSelected = useCallback((id: number) => {
+    setPatientId(id);
+    setState("file-upload");
+  }, []);
 
   const handleFileSelect = useCallback(async (file: File) => {
     setFileName(file.name);
@@ -52,7 +65,8 @@ export default function Home() {
   }, []);
 
   const handleReset = useCallback(() => {
-    setState("idle");
+    setState("patient-selection");
+    setPatientId(null);
     setProgress(0);
     setError(null);
     setMeshUrl(null);
@@ -69,8 +83,24 @@ export default function Home() {
           </p>
         </header>
 
-        {state === "idle" && (
+        {state === "patient-selection" && (
+          <PatientSelection onPatientSelected={handlePatientSelected} />
+        )}
+
+        {state === "file-upload" && (
           <div className="max-w-2xl mx-auto">
+            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-800">
+                <span className="font-semibold">Selected Patient ID:</span>{" "}
+                {patientId}
+              </p>
+              <button
+                onClick={() => setState("patient-selection")}
+                className="mt-2 text-sm text-blue-600 hover:text-blue-800 underline"
+              >
+                Change Patient
+              </button>
+            </div>
             <FileUpload onFileSelect={handleFileSelect} />
           </div>
         )}
