@@ -77,3 +77,19 @@ class PatientResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     metadata: dict = {}
+
+
+class PatientWithStats(BaseModel):
+    """Schema for patient with statistics."""
+
+    patient_id: int
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    date_of_birth: Optional[datetime] = None
+    gender: Optional[str] = None
+    medical_record_number: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    metadata: dict = {}
+    case_count: int = 0
+    file_count: int = 0

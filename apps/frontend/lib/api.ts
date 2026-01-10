@@ -88,3 +88,31 @@ export async function getPatient(patientId: number): Promise<PatientResponse> {
 
   return response.json();
 }
+
+export interface PatientWithStats extends PatientResponse {
+  case_count: number;
+  file_count: number;
+}
+
+export async function getPatientsWithStats(): Promise<PatientWithStats[]> {
+  const response = await fetch(`${API_BASE_URL}/api/patients/stats/all`);
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to get patients with stats");
+  }
+
+  return response.json();
+}
+
+export async function deletePatient(patientId: number, force: boolean = false): Promise<void> {
+  const url = `${API_BASE_URL}/api/patients/${patientId}${force ? "?force=true" : ""}`;
+  const response = await fetch(url, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to delete patient");
+  }
+}

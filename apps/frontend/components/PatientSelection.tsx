@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ManagePatients from "./ManagePatients";
 
 interface PatientSelectionProps {
   onPatientSelected: (patientId: number) => void;
@@ -9,7 +10,7 @@ interface PatientSelectionProps {
 export default function PatientSelection({
   onPatientSelected,
 }: PatientSelectionProps) {
-  const [mode, setMode] = useState<"select" | "create" | null>(null);
+  const [mode, setMode] = useState<"select" | "create" | "manage" | null>(null);
   const [patientId, setPatientId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,6 +99,13 @@ export default function PatientSelection({
               className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
             >
               Create New Patient
+            </button>
+
+            <button
+              onClick={() => setMode("manage")}
+              className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+            >
+              Manage Patients
             </button>
           </div>
         </div>
@@ -233,6 +241,10 @@ export default function PatientSelection({
         </div>
       </div>
     );
+  }
+
+  if (mode === "manage") {
+    return <ManagePatients onBack={() => setMode(null)} />;
   }
 
   return null;

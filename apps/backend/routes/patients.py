@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pymongo.errors import DuplicateKeyError
 
 from database import Database
-from models.patient import PatientCreate, PatientUpdate, PatientResponse
+from models.patient import PatientCreate, PatientUpdate, PatientResponse, PatientWithStats
 
 router = APIRouter()
 
@@ -73,6 +73,38 @@ async def list_patients(
         raise HTTPException(status_code=500, detail=f"Failed to list patients: {str(e)}")
 
 
+@router.get("/stats/all", response_model=List[PatientWithStats])
+async def list_patients_with_stats():
+    """List all patients with their case and file counts."""
+    try:
+        # Get all patients
+        cursor = Database.patients.find({}).sort("patient_id", 1)
+        patients = await cursor.to_list(length=None)
+
+        # Enrich with statistics
+        patients_with_stats = []
+        for patient in patients:
+            patient_id = patient["patient_id"]
+
+            # Count cases for this patient
+            case_count = await Database.medical_cases.count_documents({"patient_id": patient_id})
+
+            # Count files for this patient
+            file_count = await Database.scan_files.count_documents({"patient_id": patient_id})
+
+            patient_data = PatientWithStats(
+                **patient,
+                case_count=case_count,
+                file_count=file_count
+            )
+            patients_with_stats.append(patient_data)
+
+        return patients_with_stats
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list patients with stats: {str(e)}")
+
+
 @router.get("/{patient_id}", response_model=PatientResponse)
 async def get_patient(patient_id: int):
     """Get a single patient by ID."""
@@ -123,16 +155,32 @@ async def update_patient(patient_id: int, patient_update: PatientUpdate):
 
 
 @router.delete("/{patient_id}", status_code=204)
-async def delete_patient(patient_id: int):
-    """Delete a patient."""
+async def delete_patient(
+    patient_id: int,
+    force: bool = Query(False, description="Force delete patient along with all cases and files")
+):
+    """Delete a patient and optionally all associated data."""
     try:
-        # Check if patient has any medical cases
-        case_count = await Database.medical_cases.count_documents({"patient_id": patient_id})
-        if case_count > 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot delete patient with {case_count} existing medical cases. Delete cases first.",
-            )
+        # Check if patient exists
+        patient = await Database.patients.find_one({"patient_id": patient_id})
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"Patient '{patient_id}' not found")
+
+        if force:
+            # Delete all associated files
+            await Database.scan_files.delete_many({"patient_id": patient_id})
+
+            # Delete all associated cases
+            await Database.medical_cases.delete_many({"patient_id": patient_id})
+
+        else:
+            # Check if patient has any medical cases
+            case_count = await Database.medical_cases.count_documents({"patient_id": patient_id})
+            if case_count > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot delete patient with {case_count} existing medical cases. Use force=true to delete all data.",
+                )
 
         # Delete the patient
         result = await Database.patients.delete_one({"patient_id": patient_id})
