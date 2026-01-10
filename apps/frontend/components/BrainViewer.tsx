@@ -34,23 +34,25 @@ function BrainModel({ url, clippingEnabled, clippingPosition }: BrainModelProps)
 
   useEffect(() => {
     let meshIndex = 0;
-    const opacityLevels = [0.3, 0.4, 0.5, 0.6];
+    const opacityLevels = [1.0, 1.0, 1.0, 1.0];
 
     scene.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         const hasVertexColors = child.geometry.attributes.color !== undefined;
         const layerOpacity = opacityLevels[meshIndex % opacityLevels.length];
 
-        const material = new THREE.MeshPhysicalMaterial({
-          vertexColors: hasVertexColors,
-          color: hasVertexColors ? 0xffffff : 0x88ccff,
-          transparent: true,
-          opacity: layerOpacity,
+        // Compute normals for proper lighting
+        if (child.geometry) {
+          child.geometry.computeVertexNormals();
+        }
+
+        const material = new THREE.MeshPhongMaterial({
+          color: 0xcccccc,
+          specular: 0x444444,
+          shininess: 20,
+          flatShading: true,
           side: THREE.DoubleSide,
           depthWrite: true,
-          alphaTest: 0.1,
-          roughness: 0.4,
-          metalness: 0.1,
           clippingPlanes: clippingEnabled ? [clippingPlane] : [],
           clipShadows: true,
         });
@@ -107,11 +109,16 @@ export default function BrainViewer({ meshUrl, onReset }: BrainViewerProps) {
         style={{ width: "100%", height: "100%" }}
         gl={{ alpha: false, sortObjects: true, localClippingEnabled: true }}
       >
-        <color attach="background" args={["#111827"]} />
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[10, 10, 5]} intensity={1} />
-        <directionalLight position={[-10, -10, -5]} intensity={0.5} />
-        <directionalLight position={[0, 10, -10]} intensity={0.3} />
+        <color attach="background" args={["#0d1117"]} />
+        <ambientLight intensity={0.3} />
+        {/* Key light - main illumination */}
+        <directionalLight position={[50, 80, 50]} intensity={1.5} />
+        {/* Fill light - soften shadows */}
+        <directionalLight position={[-50, 20, 50]} intensity={0.6} />
+        {/* Rim light - highlight edges */}
+        <directionalLight position={[0, 30, -80]} intensity={0.8} />
+        {/* Bottom fill - show underside detail */}
+        <directionalLight position={[0, -50, 30]} intensity={0.4} />
         <ClippingSetup enabled={clippingEnabled} />
         <Suspense fallback={<LoadingSpinner />}>
           <BrainModel
