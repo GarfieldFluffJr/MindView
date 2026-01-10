@@ -46,8 +46,155 @@ class StatusResponse(BaseModel):
     error: str | None = None
 
 
+def is_segmentation_data(data: np.ndarray) -> bool:
+    """Check if the data appears to be a segmentation (discrete integer labels)."""
+    unique_values = np.unique(data[data > 0])
+    # Segmentation typically has few unique integer values
+    if len(unique_values) < 50 and np.allclose(unique_values, unique_values.astype(int)):
+        return True
+    return False
+
+
+def process_segmentation_to_mesh(job_id: str, data: np.ndarray, spacing: tuple, output_path: Path) -> None:
+    """Generate meshes from segmentation labels - each label becomes a separate colored structure."""
+    # Color palette for different brain regions (RGBA)
+    label_colors = {
+        1: [220, 180, 180, 255],   # Label 1 - light pink (e.g., necrotic tumor core)
+        2: [180, 220, 180, 255],   # Label 2 - light green (e.g., edema)  
+        3: [180, 180, 220, 255],   # Label 3 - light blue (e.g., enhancing tumor)
+        4: [255, 200, 100, 255],   # Label 4 - orange (e.g., other structure)
+        5: [200, 100, 200, 255],   # Label 5 - purple
+        6: [100, 200, 200, 255],   # Label 6 - cyan
+        7: [255, 150, 150, 255],   # Label 7 - salmon
+        8: [150, 255, 150, 255],   # Label 8 - light green
+        9: [150, 150, 255, 255],   # Label 9 - light blue
+        10: [255, 255, 150, 255],  # Label 10 - yellow
+    }
+    default_color = [200, 200, 200, 255]  # Gray for unknown labels
+    
+    unique_labels = np.unique(data[data > 0]).astype(int)
+    print(f"[{job_id}] Found {len(unique_labels)} segmentation labels: {unique_labels.tolist()}")
+    
+    meshes = []
+    
+    for i, label in enumerate(unique_labels):
+        jobs[job_id]["progress"] = 30 + int((i / len(unique_labels)) * 50)
+        print(f"[{job_id}] Processing label {label} ({i+1}/{len(unique_labels)})")
+        
+        # Create binary mask for this label
+        mask = (data == label).astype(np.float32)
+        
+        # Light smoothing to reduce jagged edges
+        mask_smoothed = gaussian_filter(mask, sigma=0.5)
+        
+        try:
+            verts, faces, normals, _ = marching_cubes(
+                mask_smoothed,
+                level=0.5,
+                spacing=spacing
+            )
+            
+            if len(verts) == 0:
+                print(f"[{job_id}] Label {label}: No vertices, skipping")
+                continue
+                
+            print(f"[{job_id}] Label {label}: {len(verts)} vertices, {len(faces)} faces")
+            
+            mesh = trimesh.Trimesh(
+                vertices=verts,
+                faces=faces,
+                vertex_normals=normals
+            )
+            
+            # Simplify large meshes
+            if len(mesh.faces) > 50000:
+                try:
+                    mesh = mesh.simplify_quadric_decimation(50000)
+                    print(f"[{job_id}] Label {label}: Simplified to {len(mesh.faces)} faces")
+                except Exception as simp_err:
+                    print(f"[{job_id}] Label {label}: Simplification failed: {simp_err}")
+            
+            # Apply color for this label
+            color = label_colors.get(int(label), default_color)
+            vertex_colors = np.tile(color, (len(mesh.vertices), 1)).astype(np.uint8)
+            mesh.visual.vertex_colors = vertex_colors
+            
+            meshes.append(mesh)
+            print(f"[{job_id}] Label {label}: Added to meshes")
+            
+        except Exception as label_err:
+            print(f"[{job_id}] Label {label} failed: {label_err}")
+            continue
+    
+    return meshes
+
+
+def process_intensity_to_mesh(job_id: str, data: np.ndarray, spacing: tuple) -> list:
+    """Generate meshes from intensity data using multiple thresholds."""
+    smoothed = gaussian_filter(data, sigma=1.0)
+    print(f"[{job_id}] Smoothing complete")
+
+    non_zero = smoothed[smoothed > 0]
+    if len(non_zero) == 0:
+        raise ValueError("No non-zero values in scan data")
+
+    # Use thresholds that better separate tissue types
+    thresholds = [
+        (np.percentile(non_zero, 25), [150, 180, 210, 200]),  # Outer surface (more transparent)
+        (np.percentile(non_zero, 50), [100, 150, 200, 220]),  # Mid layer
+        (np.percentile(non_zero, 70), [80, 120, 180, 240]),   # Inner structure
+        (np.percentile(non_zero, 85), [200, 100, 100, 255]),  # Deep structures (opaque)
+    ]
+    print(f"[{job_id}] Thresholds: {[t[0] for t in thresholds]}")
+
+    meshes = []
+
+    for i, (threshold_value, color) in enumerate(thresholds):
+        jobs[job_id]["progress"] = 30 + (i * 15)
+        print(f"[{job_id}] Processing layer {i+1}/4 at threshold {threshold_value:.2f}")
+
+        try:
+            verts, faces, normals, _ = marching_cubes(
+                smoothed,
+                level=threshold_value,
+                spacing=spacing
+            )
+            print(f"[{job_id}] Layer {i+1}: {len(verts)} vertices, {len(faces)} faces")
+
+            if len(verts) == 0:
+                print(f"[{job_id}] Layer {i+1}: No vertices, skipping")
+                continue
+
+            mesh = trimesh.Trimesh(
+                vertices=verts,
+                faces=faces,
+                vertex_normals=normals
+            )
+
+            # Simplify if too many faces
+            if len(mesh.faces) > 100000:
+                try:
+                    mesh = mesh.simplify_quadric_decimation(100000)
+                    print(f"[{job_id}] Layer {i+1}: Simplified to {len(mesh.faces)} faces")
+                except Exception as simp_err:
+                    print(f"[{job_id}] Layer {i+1}: Simplification failed: {simp_err}")
+
+            # Apply vertex colors
+            vertex_colors = np.tile(color, (len(mesh.vertices), 1)).astype(np.uint8)
+            mesh.visual.vertex_colors = vertex_colors
+
+            meshes.append(mesh)
+            print(f"[{job_id}] Layer {i+1}: Added to meshes")
+
+        except Exception as layer_err:
+            print(f"[{job_id}] Layer {i+1} failed: {layer_err}")
+            continue
+    
+    return meshes
+
+
 def process_nifti_to_mesh(job_id: str, input_path: Path, output_path: Path) -> None:
-    """Convert NIfTI file to GLB mesh with multiple isosurfaces for internal structures."""
+    """Convert NIfTI file to GLB mesh - auto-detects segmentation vs intensity data."""
     try:
         jobs[job_id]["status"] = "processing"
         jobs[job_id]["progress"] = 10
@@ -60,65 +207,13 @@ def process_nifti_to_mesh(job_id: str, input_path: Path, output_path: Path) -> N
 
         jobs[job_id]["progress"] = 20
 
-        smoothed = gaussian_filter(data, sigma=1.0)
-        print(f"[{job_id}] Smoothing complete")
-
-        non_zero = smoothed[smoothed > 0]
-        if len(non_zero) == 0:
-            raise ValueError("No non-zero values in scan data")
-
-        thresholds = [
-            (np.percentile(non_zero, 30), [150, 180, 210, 255]),  # Outer surface
-            (np.percentile(non_zero, 55), [100, 150, 200, 255]),  # Mid layer
-            (np.percentile(non_zero, 75), [80, 120, 180, 255]),   # Inner structure
-            (np.percentile(non_zero, 90), [200, 100, 100, 255]),  # Deep structures
-        ]
-        print(f"[{job_id}] Thresholds: {[t[0] for t in thresholds]}")
-
-        jobs[job_id]["progress"] = 30
-
-        meshes = []
-
-        for i, (threshold_value, color) in enumerate(thresholds):
-            jobs[job_id]["progress"] = 30 + (i * 15)
-            print(f"[{job_id}] Processing layer {i+1}/4 at threshold {threshold_value:.2f}")
-
-            try:
-                verts, faces, normals, _ = marching_cubes(
-                    smoothed,
-                    level=threshold_value,
-                    spacing=spacing
-                )
-                print(f"[{job_id}] Layer {i+1}: {len(verts)} vertices, {len(faces)} faces")
-
-                if len(verts) == 0:
-                    print(f"[{job_id}] Layer {i+1}: No vertices, skipping")
-                    continue
-
-                mesh = trimesh.Trimesh(
-                    vertices=verts,
-                    faces=faces,
-                    vertex_normals=normals
-                )
-
-                # Simplify if too many faces
-                if len(mesh.faces) > 100000:
-                    try:
-                        mesh = mesh.simplify_quadric_decimation(100000)
-                        print(f"[{job_id}] Layer {i+1}: Simplified to {len(mesh.faces)} faces")
-                    except Exception as simp_err:
-                        print(f"[{job_id}] Layer {i+1}: Simplification failed: {simp_err}")
-
-                # Apply vertex colors
-                vertex_colors = np.tile(color, (len(mesh.vertices), 1)).astype(np.uint8)
-                mesh.visual.vertex_colors = vertex_colors
-
-                meshes.append(mesh)
-                print(f"[{job_id}] Layer {i+1}: Added to meshes")
-
-            except Exception as layer_err:
-                print(f"[{job_id}] Layer {i+1} failed: {layer_err}")
-                continue
+        # Check if this is segmentation data or intensity data
+        if is_segmentation_data(data):
+            print(f"[{job_id}] Detected SEGMENTATION data - generating labeled structures")
+            meshes = process_segmentation_to_mesh(job_id, data, spacing, output_path)
+        else:
+            print(f"[{job_id}] Detected INTENSITY data - generating isosurfaces")
+            meshes = process_intensity_to_mesh(job_id, data, spacing)
 
         jobs[job_id]["progress"] = 85
 
