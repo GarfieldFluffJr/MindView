@@ -1,6 +1,6 @@
 import uuid
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import nibabel as nib
 import numpy as np
@@ -12,7 +12,10 @@ from scipy.ndimage import gaussian_filter
 from skimage.measure import marching_cubes
 import trimesh
 
-app = FastAPI(title="MindView API")
+from database import connect_to_mongo, close_mongo_connection
+from routes import patients, cases
+
+app = FastAPI(title="MindView API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,6 +24,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Startup and shutdown events
+@app.on_event("startup")
+async def startup_db():
+    """Connect to MongoDB on startup."""
+    await connect_to_mongo()
+
+
+@app.on_event("shutdown")
+async def shutdown_db():
+    """Close MongoDB connection on shutdown."""
+    await close_mongo_connection()
+
+
+# Include routers
+app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
+app.include_router(cases.router, prefix="/api/cases", tags=["Medical Cases"])
 
 BASE_DIR = Path(__file__).parent
 UPLOAD_DIR = BASE_DIR / "storage" / "uploads"
@@ -42,8 +63,8 @@ class StatusResponse(BaseModel):
     job_id: str
     status: Literal["queued", "processing", "completed", "failed"]
     progress: int
-    mesh_url: str | None = None
-    error: str | None = None
+    mesh_url: Optional[str] = None
+    error: Optional[str] = None
 
 
 def is_segmentation_data(data: np.ndarray) -> bool:
@@ -364,3 +385,24 @@ async def get_mesh(job_id: str):
         media_type="model/gltf-binary",
         filename=f"{job_id}.glb",
     )
+
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "message": "MindView API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": {
+            "patients": "/api/patients",
+            "cases": "/api/cases",
+            "upload": "/api/upload",
+        },
+    }
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy", "database": "connected"}
