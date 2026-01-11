@@ -77,9 +77,10 @@ async def create_indexes():
     # Patient indexes
     await Database.patients.create_index([("patient_id", ASCENDING)], unique=True)
 
-    # Medical case indexes
-    await Database.medical_cases.create_index([("case_id", ASCENDING)], unique=True)
-    await Database.medical_cases.create_index([("patient_id", ASCENDING)])
+    # Medical case indexes (unique on patient_id + case_id combination)
+    await Database.medical_cases.create_index(
+        [("patient_id", ASCENDING), ("case_id", ASCENDING)], unique=True
+    )
     await Database.medical_cases.create_index(
         [("patient_id", ASCENDING), ("created_at", DESCENDING)]
     )
