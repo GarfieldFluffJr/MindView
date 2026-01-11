@@ -14,6 +14,7 @@ from scipy.ndimage import gaussian_filter
 from skimage.measure import marching_cubes
 import trimesh
 
+from config import settings
 from database import connect_to_mongo, close_mongo_connection, Database
 from routes import patients, cases, files, timeline, notes, feedback
 from services.synthseg_service import (
@@ -30,9 +31,12 @@ from services.tumor_inference import TumorInference, run_tumor_detection
 
 app = FastAPI(title="MindView API", version="1.0.0")
 
+# Parse CORS origins from comma-separated string
+cors_origins = [origin.strip() for origin in settings.cors_origins.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -394,7 +394,8 @@ export default function CaseFeedback({
           <div className="border-t border-gray-800 bg-gray-900/50 p-4">
             <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto">
               <div className="flex gap-3">
-                <textarea
+                <input
+                  type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   onKeyDown={(e) => {
@@ -406,20 +407,19 @@ export default function CaseFeedback({
                     }
                   }}
                   placeholder="Ask a question about this case..."
-                  rows={2}
                   disabled={sending || generating}
-                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none disabled:opacity-50"
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50"
                 />
                 <button
                   type="submit"
                   disabled={!inputMessage.trim() || sending || generating}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-6 rounded-lg transition-colors flex items-center gap-2"
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 rounded-lg transition-colors flex items-center justify-center"
                 >
                   {sending ? (
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
                   ) : (
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                     </svg>
                   )}
                 </button>

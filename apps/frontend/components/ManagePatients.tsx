@@ -39,7 +39,7 @@ export default function ManagePatients({ onBack }: ManagePatientsProps) {
     setError(null);
 
     try {
-      const response = await fetch("${API_BASE_URL}/api/patients/stats/all");
+      const response = await fetch(`${API_BASE_URL}/api/patients/stats/all`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch patients");
