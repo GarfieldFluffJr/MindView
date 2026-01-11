@@ -15,7 +15,7 @@ from skimage.measure import marching_cubes
 import trimesh
 
 from database import connect_to_mongo, close_mongo_connection, Database
-from routes import patients, cases, files
+from routes import patients, cases, files, timeline, notes
 from services.synthseg_service import (
     get_label_info,
     detect_segmentation_type,
@@ -56,6 +56,7 @@ app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
 app.include_router(cases.router, prefix="/api/cases", tags=["Medical Cases"])
 app.include_router(files.router, prefix="/api/files", tags=["Scan Files"])
 app.include_router(timeline.router, prefix="/api/timeline", tags=["Timeline"])
+app.include_router(notes.router, prefix="/api/notes", tags=["Notes"])
 
 BASE_DIR = Path(__file__).parent
 UPLOAD_DIR = BASE_DIR / "storage" / "uploads"
