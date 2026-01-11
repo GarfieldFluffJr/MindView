@@ -1,7 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import ConfirmModal from "./ConfirmModal";
+import TimelineViewer from "./TimelineViewer";
+import {
+  getTimelineInfo,
+  generateTimeline,
+  getTimelineStatus,
+  getTimelineMeshUrl,
+  TimelineMetadata,
+  TimelineJobStatus,
+} from "@/lib/api";
 
 interface ScanFile {
   job_id: string;
@@ -43,6 +52,14 @@ export default function FileList({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<ScanFile | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Timeline state
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [timelineData, setTimelineData] = useState<TimelineMetadata | null>(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineGenerating, setTimelineGenerating] = useState(false);
+  const [timelineProgress, setTimelineProgress] = useState(0);
+  const [timelineStep, setTimelineStep] = useState<string | null>(null);
 
   useEffect(() => {
     fetchFiles();
@@ -108,6 +125,77 @@ export default function FileList({
     setFileToDelete(null);
   };
 
+  // Count completed NIfTI files (only NIfTI files can be morphed)
+  const completedNiftiFiles = files.filter(
+    (f) => f.status === "completed" &&
+    (f.original_filename.endsWith(".nii") || f.original_filename.endsWith(".nii.gz"))
+  );
+  const canViewTimeline = completedNiftiFiles.length >= 2;
+
+  // Poll for timeline generation status
+  const pollTimelineStatus = useCallback(async (jobId: string) => {
+    const poll = async () => {
+      try {
+        const status = await getTimelineStatus(jobId);
+        setTimelineProgress(status.progress);
+        setTimelineStep(status.current_step);
+
+        if (status.status === "completed") {
+          // Fetch updated timeline info and show viewer
+          const info = await getTimelineInfo(patientId, caseId);
+          setTimelineData(info);
+          setTimelineGenerating(false);
+          setShowTimeline(true);
+        } else if (status.status === "failed") {
+          setError(status.error || "Timeline generation failed");
+          setTimelineGenerating(false);
+        } else {
+          // Continue polling
+          setTimeout(poll, 1000);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to check timeline status");
+        setTimelineGenerating(false);
+      }
+    };
+
+    poll();
+  }, [patientId, caseId]);
+
+  // Handle timeline view button click
+  const handleViewTimeline = async () => {
+    setTimelineLoading(true);
+    setError(null);
+
+    try {
+      const info = await getTimelineInfo(patientId, caseId);
+      setTimelineData(info);
+
+      if (info.has_timeline_mesh && info.timeline_job_id) {
+        // Timeline already generated, show viewer
+        setTimelineLoading(false);
+        setShowTimeline(true);
+      } else {
+        // Need to generate timeline
+        setTimelineLoading(false);
+        setTimelineGenerating(true);
+        setTimelineProgress(0);
+        setTimelineStep("Starting timeline generation...");
+
+        const job = await generateTimeline(patientId, caseId, 10);
+        pollTimelineStatus(job.job_id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load timeline");
+      setTimelineLoading(false);
+    }
+  };
+
+  // Close timeline viewer
+  const handleCloseTimeline = () => {
+    setShowTimeline(false);
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-xl shadow-lg p-8">
@@ -126,13 +214,60 @@ export default function FileList({
               Change Case
             </button>
           </div>
-          <button
-            onClick={onUploadFile}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-          >
-            Upload New File
-          </button>
+          <div className="flex items-center gap-3">
+            {canViewTimeline && (
+              <button
+                onClick={handleViewTimeline}
+                disabled={timelineLoading || timelineGenerating}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                {timelineLoading
+                  ? "Loading..."
+                  : timelineGenerating
+                  ? `Generating (${timelineProgress}%)`
+                  : "View Timeline"}
+              </button>
+            )}
+            <button
+              onClick={onUploadFile}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              Upload New File
+            </button>
+          </div>
         </div>
+
+        {/* Timeline generation progress */}
+        {timelineGenerating && (
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+              <span className="text-purple-800 font-medium">
+                Generating Timeline...
+              </span>
+            </div>
+            <div className="w-full bg-purple-200 rounded-full h-2 mb-1">
+              <div
+                className="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${timelineProgress}%` }}
+              />
+            </div>
+            <p className="text-sm text-purple-600">{timelineStep}</p>
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
@@ -269,6 +404,18 @@ export default function FileList({
         onCancel={handleCancelDelete}
         isDestructive
       />
+
+      {/* Timeline Viewer */}
+      {showTimeline && timelineData && timelineData.timeline_job_id && (
+        <TimelineViewer
+          patientId={patientId}
+          caseId={caseId}
+          scans={timelineData.scans}
+          meshUrl={getTimelineMeshUrl(timelineData.timeline_job_id)}
+          timelineJobId={timelineData.timeline_job_id}
+          onClose={handleCloseTimeline}
+        />
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ class Database:
     patients = None
     medical_cases = None
     scan_files = None
+    timeline_jobs = None
 
 
 async def connect_to_mongo():
@@ -34,6 +35,7 @@ async def connect_to_mongo():
         Database.patients = Database.db["patients"]
         Database.medical_cases = Database.db["medical_cases"]
         Database.scan_files = Database.db["scan_files"]
+        Database.timeline_jobs = Database.db["timeline_jobs"]
 
         # Initialize GridFS bucket
         Database.gridfs_bucket = AsyncIOMotorGridFSBucket(
@@ -85,5 +87,12 @@ async def create_indexes():
     await Database.scan_files.create_index(
         [("case_id", ASCENDING), ("scan_timestamp", DESCENDING)]
     )
+
+    # Timeline job indexes
+    await Database.timeline_jobs.create_index([("job_id", ASCENDING)], unique=True)
+    await Database.timeline_jobs.create_index([
+        ("patient_id", ASCENDING),
+        ("case_id", ASCENDING)
+    ])
 
     print("✓ Indexes created successfully")

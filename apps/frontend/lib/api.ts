@@ -271,3 +271,116 @@ export async function deleteFile(
     throw new Error(error.detail || "Failed to delete file");
   }
 }
+
+// Timeline API types
+export interface TimelineScanInfo {
+  job_id: string;
+  scan_timestamp: string;
+  original_filename: string;
+  index: number;
+}
+
+export interface TimelineMetadata {
+  patient_id: number;
+  case_id: number;
+  scan_count: number;
+  scans: TimelineScanInfo[];
+  has_timeline_mesh: boolean;
+  timeline_job_id: string | null;
+  timeline_status: string | null;
+}
+
+export interface TimelineJobStatus {
+  job_id: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  progress: number;
+  current_step: string | null;
+  mesh_url: string | null;
+  error: string | null;
+  total_frames: number | null;
+  frames_generated: number | null;
+}
+
+// Helper to extract error message from FastAPI error responses
+function extractErrorMessage(error: unknown, defaultMsg: string): string {
+  if (!error || typeof error !== 'object') return defaultMsg;
+  const err = error as { detail?: unknown };
+  if (typeof err.detail === 'string') return err.detail;
+  if (Array.isArray(err.detail)) {
+    return err.detail.map((e: { msg?: string }) => e.msg || '').filter(Boolean).join(', ') || defaultMsg;
+  }
+  return defaultMsg;
+}
+
+export async function getTimelineInfo(
+  patientId: number,
+  caseId: number
+): Promise<TimelineMetadata> {
+  // Ensure we have valid numbers
+  const pid = Number(patientId);
+  const cid = Number(caseId);
+  if (isNaN(pid) || isNaN(cid)) {
+    throw new Error("Invalid patient or case ID");
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/timeline/${pid}/${cid}`
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(extractErrorMessage(error, "Failed to get timeline info"));
+  }
+
+  return response.json();
+}
+
+export async function generateTimeline(
+  patientId: number,
+  caseId: number,
+  framesBetweenScans: number = 10
+): Promise<TimelineJobStatus> {
+  // Ensure we have valid numbers
+  const pid = Number(patientId);
+  const cid = Number(caseId);
+  if (isNaN(pid) || isNaN(cid)) {
+    throw new Error("Invalid patient or case ID");
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/timeline/${pid}/${cid}/generate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ frames_between_scans: framesBetweenScans }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(extractErrorMessage(error, "Failed to generate timeline"));
+  }
+
+  return response.json();
+}
+
+export async function getTimelineStatus(
+  jobId: string
+): Promise<TimelineJobStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/timeline/status/${jobId}`);
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(extractErrorMessage(error, "Failed to get timeline status"));
+  }
+
+  return response.json();
+}
+
+export function getTimelineMeshUrl(jobId: string): string {
+  return `${API_BASE_URL}/api/timeline/mesh/${jobId}`;
+}
+
+export function getTimelineMorphDataUrl(jobId: string): string {
+  return `${API_BASE_URL}/api/timeline/mesh/${jobId}/morphs`;
+}
