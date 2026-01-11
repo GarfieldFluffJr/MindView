@@ -13,8 +13,8 @@ def get_gemini_model():
         raise ValueError("GEMINI_API_KEY not configured. Add it to your .env file.")
 
     genai.configure(api_key=settings.gemini_api_key)
-    # Using gemini-flash-latest for free tier
-    return genai.GenerativeModel('models/gemini-flash-latest')
+    # Using gemini-1.5-flash for free tier
+    return genai.GenerativeModel('gemini-1.5-flash')
 
 
 SYSTEM_PROMPT = """You are a medical AI assistant helping neurologists and radiologists analyze brain MRI scans.
@@ -123,7 +123,20 @@ async def generate_summary(
     ])
 
     response = await chat.send_message_async(prompt)
-    return response.text
+
+    # Check if response has valid content
+    if not response.candidates or len(response.candidates) == 0:
+        raise ValueError("Gemini API returned no response candidates")
+
+    candidate = response.candidates[0]
+    if not candidate.content or not candidate.content.parts:
+        # Check finish reason for more context
+        finish_reason = getattr(candidate, 'finish_reason', None)
+        if finish_reason:
+            raise ValueError(f"Gemini API returned empty response (finish_reason: {finish_reason})")
+        raise ValueError("Gemini API returned empty response")
+
+    return candidate.content.parts[0].text
 
 
 async def chat_response(
@@ -161,4 +174,15 @@ async def chat_response(
     current_message = messages[-1]["content"] if messages else ""
     response = await chat.send_message_async(current_message)
 
-    return response.text
+    # Check if response has valid content
+    if not response.candidates or len(response.candidates) == 0:
+        raise ValueError("Gemini API returned no response candidates")
+
+    candidate = response.candidates[0]
+    if not candidate.content or not candidate.content.parts:
+        finish_reason = getattr(candidate, 'finish_reason', None)
+        if finish_reason:
+            raise ValueError(f"Gemini API returned empty response (finish_reason: {finish_reason})")
+        raise ValueError("Gemini API returned empty response")
+
+    return candidate.content.parts[0].text
