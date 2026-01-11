@@ -419,15 +419,21 @@ async def get_status(job_id: str):
 @app.get("/api/mesh/{job_id}")
 async def get_mesh(job_id: str):
     """Download the generated mesh file."""
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
+    mesh_path = None
 
-    job = jobs[job_id]
+    # First check in-memory jobs dict
+    if job_id in jobs:
+        job = jobs[job_id]
+        if job["status"] != "completed":
+            raise HTTPException(status_code=400, detail="Mesh not ready yet")
+        mesh_path = job.get("mesh_path")
+    else:
+        # Check database for existing file
+        file_doc = await Database.scan_files.find_one({"job_id": job_id})
+        if file_doc and file_doc.get("status") == "completed":
+            # Construct mesh path from job_id
+            mesh_path = str(MESH_DIR / f"{job_id}.glb")
 
-    if job["status"] != "completed":
-        raise HTTPException(status_code=400, detail="Mesh not ready yet")
-
-    mesh_path = job.get("mesh_path")
     if not mesh_path or not Path(mesh_path).exists():
         raise HTTPException(status_code=404, detail="Mesh file not found")
 
