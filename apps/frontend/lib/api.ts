@@ -14,12 +14,32 @@ export interface StatusResponse {
   error: string | null;
 }
 
+export interface RegionInfo {
+  name: string;
+  label: string;
+  labelId: number;
+  color: [number, number, number];
+  category: string;
+  opacity: number;
+  defaultVisible: boolean;
+  vertexCount?: number;
+  faceCount?: number;
+}
+
+export interface MeshMetadata {
+  regions: RegionInfo[];
+  has_tumor: boolean;
+  total_regions: number;
+  segmentation_method: string;
+}
+
 export async function uploadFile(
   file: File,
   patientId: number,
   caseId: number,
   scanDate?: string
 ): Promise<UploadResponse> {
+
   const formData = new FormData();
   formData.append("file", file);
 
@@ -56,6 +76,12 @@ export function getMeshUrl(jobId: string): string {
   return `${API_BASE_URL}/api/mesh/${jobId}`;
 }
 
+export async function getMetadata(jobId: string): Promise<MeshMetadata> {
+  const response = await fetch(`${API_BASE_URL}/api/mesh/${jobId}/metadata`);
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to get metadata");
 export interface PatientResponse {
   patient_id: number;
   first_name: string | null;

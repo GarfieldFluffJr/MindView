@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import PatientSelection from "@/components/PatientSelection";
 import CaseList from "@/components/CaseList";
 import FileList from "@/components/FileList";
 import FileUpload from "@/components/FileUpload";
 import ProcessingStatus from "@/components/ProcessingStatus";
-import { uploadFile, getMeshUrl } from "@/lib/api";
+import RegionControls from "@/components/RegionControls";
+import { uploadFile, getMeshUrl, getMetadata, MeshMetadata, RegionInfo } from "@/lib/api";
 
 const BrainViewer = dynamic(() => import("@/components/BrainViewer"), {
   ssr: false,
@@ -28,6 +29,11 @@ type AppState =
   | "viewing"
   | "error";
 
+interface RegionState {
+  visible: boolean;
+  opacity: number;
+}
+
 export default function Home() {
   const [state, setState] = useState<AppState>("patient-selection");
   const [patientId, setPatientId] = useState<number | null>(null);
@@ -37,6 +43,31 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [meshUrl, setMeshUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [metadata, setMetadata] = useState<MeshMetadata | null>(null);
+  const [regionStates, setRegionStates] = useState<Record<string, RegionState>>({});
+
+  // Fetch metadata when jobId changes and we're in viewing state
+  useEffect(() => {
+    if (jobId && state === "viewing") {
+      getMetadata(jobId)
+        .then((data) => {
+          setMetadata(data);
+          // Initialize region states from metadata
+          const initialStates: Record<string, RegionState> = {};
+          for (const region of data.regions) {
+            initialStates[region.name] = {
+              visible: region.defaultVisible,
+              opacity: region.opacity,
+            };
+          }
+          setRegionStates(initialStates);
+        })
+        .catch((err) => {
+          console.error("Failed to fetch metadata:", err);
+        });
+    }
+  }, [jobId, state]);
 
   const handlePatientSelected = useCallback((id: number) => {
     setPatientId(id);
@@ -70,10 +101,14 @@ export default function Home() {
     setState("uploading");
     setProgress(0);
     setError(null);
+    setMetadata(null);
+    setRegionStates({});
 
     try {
       setProgress(10);
+
       const response = await uploadFile(file, patientId, caseId, scanDate);
+      setJobId(response.job_id);
 
       if (response.status === "completed") {
         setProgress(100);
@@ -109,11 +144,55 @@ export default function Home() {
     setError(null);
     setMeshUrl(null);
     setFileName(null);
+    setJobId(null);
+    setMetadata(null);
+    setRegionStates({});
   }, []);
+
+  const handleRegionChange = useCallback(
+    (regionName: string, changes: Partial<RegionState>) => {
+      setRegionStates((prev) => ({
+        ...prev,
+        [regionName]: {
+          ...prev[regionName],
+          ...changes,
+        },
+      }));
+    },
+    []
+  );
+
+  const handleShowAll = useCallback(() => {
+    if (!metadata) return;
+    setRegionStates((prev) => {
+      const next = { ...prev };
+      for (const region of metadata.regions) {
+        next[region.name] = {
+          ...next[region.name],
+          visible: true,
+        };
+      }
+      return next;
+    });
+  }, [metadata]);
+
+  const handleHideAll = useCallback(() => {
+    if (!metadata) return;
+    setRegionStates((prev) => {
+      const next = { ...prev };
+      for (const region of metadata.regions) {
+        next[region.name] = {
+          ...next[region.name],
+          visible: false,
+        };
+      }
+      return next;
+    });
+  }, [metadata]);
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-4 py-8">
         <header className="text-center mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">MindView</h1>
           <p className="text-gray-600">
@@ -196,6 +275,7 @@ export default function Home() {
         )}
 
         {state === "viewing" && meshUrl && (
+
           <div className="w-full">
             <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 max-w-2xl mx-auto">
               <div className="text-sm text-blue-800">
@@ -225,7 +305,29 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            <BrainViewer meshUrl={meshUrl} onReset={handleReset} />
+            
+            {/* Region Controls - Left Panel */}
+            {metadata && metadata.regions.length > 0 && (
+              <div className="w-72 flex-shrink-0">
+                <RegionControls
+                  regions={metadata.regions}
+                  regionStates={regionStates}
+                  onRegionChange={handleRegionChange}
+                  onShowAll={handleShowAll}
+                  onHideAll={handleHideAll}
+                  hasTumor={metadata.has_tumor}
+                />
+              </div>
+            )}
+            
+            {/* Brain Viewer - Main Area */}
+            <div className="flex-1">
+              <BrainViewer
+                meshUrl={meshUrl}
+                regionStates={regionStates}
+                onReset={handleReset}
+              />
+            </div>
           </div>
         )}
 

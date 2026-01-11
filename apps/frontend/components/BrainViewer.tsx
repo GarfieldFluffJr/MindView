@@ -1,14 +1,20 @@
 "use client";
 
-import { Suspense, useEffect, useState, useMemo } from "react";
+import { Suspense, useEffect, useState, useMemo, useRef } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { TrackballControls, useGLTF, Center, Environment } from "@react-three/drei";
 import * as THREE from "three";
+
+interface RegionState {
+  visible: boolean;
+  opacity: number;
+}
 
 interface BrainModelProps {
   url: string;
   clippingEnabled: boolean;
   clippingPosition: number;
+  regionStates: Record<string, RegionState>;
 }
 
 function ClippingSetup({ enabled }: { enabled: boolean }) {
@@ -21,8 +27,9 @@ function ClippingSetup({ enabled }: { enabled: boolean }) {
   return null;
 }
 
-function BrainModel({ url, clippingEnabled, clippingPosition }: BrainModelProps) {
+function BrainModel({ url, clippingEnabled, clippingPosition, regionStates }: BrainModelProps) {
   const { scene } = useGLTF(url);
+  const materialsRef = useRef<Map<string, THREE.MeshPhongMaterial>>(new Map());
 
   const clippingPlane = useMemo(() => {
     return new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -32,37 +39,87 @@ function BrainModel({ url, clippingEnabled, clippingPosition }: BrainModelProps)
     clippingPlane.constant = clippingPosition;
   }, [clippingPlane, clippingPosition]);
 
+  // Initial setup - create materials and extract vertex colors
   useEffect(() => {
-    let meshIndex = 0;
-    const opacityLevels = [1.0, 1.0, 1.0, 1.0];
-
     scene.traverse((child) => {
       if (child instanceof THREE.Mesh) {
+        const meshName = child.name || "unknown";
+
+        // Check for vertex colors
         const hasVertexColors = child.geometry.attributes.color !== undefined;
-        const layerOpacity = opacityLevels[meshIndex % opacityLevels.length];
 
         // Compute normals for proper lighting
         if (child.geometry) {
           child.geometry.computeVertexNormals();
         }
 
+        // Create material with vertex colors if available
         const material = new THREE.MeshPhongMaterial({
-          color: 0xcccccc,
+          vertexColors: hasVertexColors,
+          color: hasVertexColors ? 0xffffff : 0xcccccc,
           specular: 0x444444,
           shininess: 20,
           flatShading: false,
           side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 1.0,
           depthWrite: true,
           clippingPlanes: clippingEnabled ? [clippingPlane] : [],
           clipShadows: true,
         });
 
+        // Fix backface lighting by flipping normals when viewing from behind
+        material.onBeforeCompile = (shader) => {
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <normal_fragment_maps>',
+            `#include <normal_fragment_maps>
+             if (!gl_FrontFacing) normal = -normal;`
+          );
+        };
+
         child.material = material;
-        child.renderOrder = meshIndex;
-        meshIndex++;
+        materialsRef.current.set(meshName, material);
+      }
+    });
+
+    // Cleanup
+    return () => {
+      materialsRef.current.forEach((material) => {
+        material.dispose();
+      });
+      materialsRef.current.clear();
+    };
+  }, [scene, clippingPlane]); // Only run once on mount
+
+  // Update clipping planes when clipping state changes
+  useEffect(() => {
+    scene.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshPhongMaterial) {
+        child.material.clippingPlanes = clippingEnabled ? [clippingPlane] : [];
+        child.material.needsUpdate = true;
       }
     });
   }, [scene, clippingEnabled, clippingPlane]);
+
+  // Update visibility and opacity based on regionStates
+  useEffect(() => {
+    scene.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const meshName = child.name || "unknown";
+        const state = regionStates[meshName];
+
+        if (state) {
+          child.visible = state.visible;
+          if (child.material instanceof THREE.MeshPhongMaterial) {
+            child.material.opacity = state.opacity;
+            child.material.transparent = state.opacity < 1.0;
+            child.material.depthWrite = true;
+            child.material.needsUpdate = true;
+          }
+        }
+      }
+    });
+  }, [scene, regionStates]);
 
   return (
     <>
@@ -70,13 +127,18 @@ function BrainModel({ url, clippingEnabled, clippingPosition }: BrainModelProps)
         <primitive object={scene} />
       </Center>
       {clippingEnabled && (
-        <mesh position={[0, -clippingPosition, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh
+          position={[0, -clippingPosition, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          renderOrder={-1}
+        >
           <planeGeometry args={[300, 300]} />
           <meshBasicMaterial
-            color="#ff6b6b"
+            color="#aaaaaa"
             transparent
-            opacity={0.15}
+            opacity={0.1}
             side={THREE.DoubleSide}
+            depthWrite={false}
           />
         </mesh>
       )}
@@ -95,10 +157,11 @@ function LoadingSpinner() {
 
 interface BrainViewerProps {
   meshUrl: string;
+  regionStates: Record<string, RegionState>;
   onReset?: () => void;
 }
 
-export default function BrainViewer({ meshUrl, onReset }: BrainViewerProps) {
+export default function BrainViewer({ meshUrl, regionStates, onReset }: BrainViewerProps) {
   const [clippingEnabled, setClippingEnabled] = useState(false);
   const [clippingPosition, setClippingPosition] = useState(100);
 
@@ -125,6 +188,7 @@ export default function BrainViewer({ meshUrl, onReset }: BrainViewerProps) {
             url={meshUrl}
             clippingEnabled={clippingEnabled}
             clippingPosition={clippingPosition}
+            regionStates={regionStates}
           />
           <Environment preset="studio" />
         </Suspense>

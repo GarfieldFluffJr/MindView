@@ -1,3 +1,4 @@
+import json
 import uuid
 from pathlib import Path
 from typing import Literal, Optional
@@ -6,15 +7,24 @@ import nibabel as nib
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from scipy.ndimage import gaussian_filter
 from skimage.measure import marching_cubes
 import trimesh
 
-from datetime import datetime
-from database import connect_to_mongo, close_mongo_connection, Database
-from routes import patients, cases, files
+from database import connect_to_mongo, close_mongo_connection
+from routes import patients, cases
+from services.synthseg_service import (
+    get_label_info,
+    detect_segmentation_type,
+    remap_brats_labels,
+    SYNTHSEG_LABELS,
+    TUMOR_LABELS,
+)
+from services.mesh_generation import segmentation_to_meshes, intensity_to_meshes
+from services.segmentation_service import run_auto_segmentation
+from services.model_manager import SegmentationError
 
 app = FastAPI(title="MindView API", version="1.0.0")
 
@@ -48,9 +58,13 @@ app.include_router(files.router, prefix="/api/files", tags=["Scan Files"])
 BASE_DIR = Path(__file__).parent
 UPLOAD_DIR = BASE_DIR / "storage" / "uploads"
 MESH_DIR = BASE_DIR / "storage" / "meshes"
+METADATA_DIR = BASE_DIR / "storage" / "metadata"
+SEGMENTATION_DIR = BASE_DIR / "storage" / "segmentations"
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MESH_DIR.mkdir(parents=True, exist_ok=True)
+METADATA_DIR.mkdir(parents=True, exist_ok=True)
+SEGMENTATION_DIR.mkdir(parents=True, exist_ok=True)
 
 jobs: dict[str, dict] = {}
 
@@ -63,8 +77,9 @@ class UploadResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     job_id: str
-    status: Literal["queued", "processing", "completed", "failed"]
+    status: Literal["queued", "processing", "segmenting", "meshing", "completed", "failed"]
     progress: int
+    status_message: Optional[str] = None
     mesh_url: Optional[str] = None
     error: Optional[str] = None
 
@@ -223,7 +238,9 @@ def process_intensity_to_mesh(job_id: str, data: np.ndarray, spacing: tuple) -> 
 
 
 def process_nifti_to_mesh(job_id: str, input_path: Path, output_path: Path) -> None:
-    """Convert NIfTI file to GLB mesh - auto-detects segmentation vs intensity data."""
+    """Convert NIfTI file to GLB mesh with metadata - auto-detects segmentation vs intensity data."""
+    metadata_path = METADATA_DIR / f"{job_id}.json"
+
     try:
         jobs[job_id]["status"] = "processing"
         jobs[job_id]["progress"] = 10
@@ -234,34 +251,80 @@ def process_nifti_to_mesh(job_id: str, input_path: Path, output_path: Path) -> N
         spacing = img.header.get_zooms()[:3]
         print(f"[{job_id}] Data shape: {data.shape}, spacing: {spacing}")
 
-        jobs[job_id]["progress"] = 20
+        jobs[job_id]["progress"] = 15
 
-        # Check if this is segmentation data or intensity data
-        if is_segmentation_data(data):
-            print(f"[{job_id}] Detected SEGMENTATION data - generating labeled structures")
-            meshes = process_segmentation_to_mesh(job_id, data, spacing, output_path)
+        # Always run segmentation regardless of input type
+        seg_type = 'intensity'
+        print(f"[{job_id}] Forcing auto-segmentation (ignoring existing labels)")
+
+        def update_progress(p):
+            jobs[job_id]["progress"] = p
+
+        if seg_type == 'intensity':
+            # Raw intensity data - run auto-segmentation with SynthSeg
+            print(f"[{job_id}] Processing as INTENSITY data - running auto-segmentation")
+            jobs[job_id]["status_message"] = "Running brain segmentation (this may take 2-5 minutes)..."
+
+            try:
+                # Run SynthSeg to create segmentation
+                segmentation_path, seg_metadata = run_auto_segmentation(
+                    input_path,
+                    SEGMENTATION_DIR,
+                    job_id,
+                    progress_callback=update_progress
+                )
+
+                print(f"[{job_id}] Auto-segmentation complete, generating mesh...")
+                jobs[job_id]["status_message"] = "Generating 3D visualization..."
+
+                # Generate mesh from the segmentation
+                segmentation_to_meshes(
+                    segmentation_path,
+                    output_path,
+                    metadata_path,
+                    job_id,
+                    progress_callback=update_progress
+                )
+
+            except SegmentationError as seg_err:
+                # Fallback to intensity-based if segmentation fails
+                print(f"[{job_id}] Segmentation failed, falling back to intensity-based: {seg_err}")
+                jobs[job_id]["status_message"] = "Generating intensity-based visualization..."
+                intensity_to_meshes(
+                    input_path,
+                    output_path,
+                    metadata_path,
+                    job_id,
+                    progress_callback=update_progress
+                )
         else:
-            print(f"[{job_id}] Detected INTENSITY data - generating isosurfaces")
-            meshes = process_intensity_to_mesh(job_id, data, spacing)
+            # Segmentation data (brats, synthseg, or simple)
+            print(f"[{job_id}] Processing as SEGMENTATION data ({seg_type})")
 
-        jobs[job_id]["progress"] = 85
+            # If BraTS, remap labels first
+            if seg_type == 'brats':
+                print(f"[{job_id}] Remapping BraTS labels to standard format")
+                remapped_data = remap_brats_labels(data)
+                remapped_path = SEGMENTATION_DIR / f"{job_id}_remapped.nii.gz"
+                remapped_img = nib.Nifti1Image(remapped_data, img.affine, img.header)
+                nib.save(remapped_img, str(remapped_path))
+                seg_input = remapped_path
+            else:
+                seg_input = input_path
 
-        if not meshes:
-            raise ValueError("Could not generate any mesh surfaces from the scan")
-
-        print(f"[{job_id}] Combining {len(meshes)} meshes...")
-        combined_mesh = trimesh.util.concatenate(meshes)
-        print(f"[{job_id}] Combined mesh: {len(combined_mesh.vertices)} vertices, {len(combined_mesh.faces)} faces")
-
-        jobs[job_id]["progress"] = 95
-
-        print(f"[{job_id}] Exporting to GLB...")
-        combined_mesh.export(str(output_path), file_type="glb")
-        print(f"[{job_id}] Export complete: {output_path}")
+            segmentation_to_meshes(
+                seg_input,
+                output_path,
+                metadata_path,
+                job_id,
+                progress_callback=update_progress
+            )
 
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["progress"] = 100
         jobs[job_id]["mesh_path"] = str(output_path)
+        jobs[job_id]["metadata_path"] = str(metadata_path)
+        print(f"[{job_id}] Processing complete!")
 
     except Exception as e:
         print(f"[{job_id}] ERROR: {e}")
@@ -341,6 +404,7 @@ async def upload_file(
     jobs[job_id] = {
         "status": "queued",
         "progress": 0,
+        "status_message": "Processing uploaded file...",
         "input_path": str(input_path),
         "mesh_path": None,
         "error": None,
@@ -411,6 +475,7 @@ async def get_status(job_id: str):
         job_id=job_id,
         status=job["status"],
         progress=job["progress"],
+        status_message=job.get("status_message"),
         mesh_url=mesh_url,
         error=job.get("error"),
     )
@@ -442,6 +507,37 @@ async def get_mesh(job_id: str):
         media_type="model/gltf-binary",
         filename=f"{job_id}.glb",
     )
+
+
+@app.get("/api/mesh/{job_id}/metadata")
+async def get_mesh_metadata(job_id: str):
+    """Get metadata for the generated mesh including region information."""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = jobs[job_id]
+
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Mesh not ready yet")
+
+    metadata_path = job.get("metadata_path")
+    if not metadata_path:
+        # Fallback to default path
+        metadata_path = METADATA_DIR / f"{job_id}.json"
+
+    if not Path(metadata_path).exists():
+        # Return minimal metadata if file doesn't exist
+        return JSONResponse({
+            "regions": [],
+            "has_tumor": False,
+            "total_regions": 0,
+            "segmentation_method": "unknown",
+        })
+
+    with open(metadata_path, "r") as f:
+        metadata = json.load(f)
+
+    return JSONResponse(metadata)
 
 
 @app.get("/")

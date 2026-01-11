@@ -42,11 +42,15 @@ Thumbs.db
 
 # Application specific
 storage/
+models/
 *.nii
 *.nii.gz
 *.obj
 *.glb
 *.mtl
+*.h5
+*.pt
+*.pth
 
 # Logs
 *.log
