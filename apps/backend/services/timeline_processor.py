@@ -144,6 +144,58 @@ def voxels_to_mesh(
     return mesh
 
 
+def compute_vertex_displacements(
+    base_mesh: trimesh.Trimesh,
+    voxels: np.ndarray,
+    spacing: tuple,
+    threshold: float,
+    displacement_scale: float = 2.0
+) -> np.ndarray:
+    """Compute vertex displacements by sampling voxel field.
+
+    For each vertex in the base mesh, sample the voxel field and compute
+    displacement along the vertex normal based on the difference from threshold.
+
+    Args:
+        base_mesh: The base mesh with vertices and normals
+        voxels: 3D voxel array for the target frame
+        spacing: Voxel spacing (x, y, z)
+        threshold: Isosurface threshold value
+        displacement_scale: Scale factor for displacements
+
+    Returns:
+        Array of vertex positions after displacement
+    """
+    from scipy.ndimage import map_coordinates
+
+    vertices = np.array(base_mesh.vertices)
+    normals = np.array(base_mesh.vertex_normals)
+
+    # Convert vertex positions to voxel coordinates
+    voxel_coords = vertices / np.array(spacing)
+
+    # Clamp coordinates to valid range
+    for i in range(3):
+        voxel_coords[:, i] = np.clip(voxel_coords[:, i], 0, voxels.shape[i] - 1)
+
+    # Sample voxel values at vertex positions
+    sampled_values = map_coordinates(
+        voxels,
+        voxel_coords.T,
+        order=1,  # Linear interpolation
+        mode='nearest'
+    )
+
+    # Compute displacement along normals based on difference from threshold
+    # Positive when surface should move outward, negative when inward
+    displacement_amount = (sampled_values - threshold) * displacement_scale
+
+    # Apply displacement along normals
+    displaced_vertices = vertices + normals * displacement_amount[:, np.newaxis]
+
+    return displaced_vertices.astype(np.float32)
+
+
 def create_morph_data_json(
     base_mesh: trimesh.Trimesh,
     morph_meshes: List[trimesh.Trimesh],
@@ -161,7 +213,7 @@ def create_morph_data_json(
 
     Args:
         base_mesh: The base mesh (first frame)
-        morph_meshes: List of morph target meshes
+        morph_meshes: List of morph target meshes (or displaced vertex arrays)
         scan_timestamps: Timestamps for the original scans
         output_path: Path to save the JSON file
     """
@@ -174,8 +226,14 @@ def create_morph_data_json(
         "deltas": []
     }
 
-    for mesh in morph_meshes:
-        delta = np.array(mesh.vertices, dtype=np.float32) - base_verts
+    for morph in morph_meshes:
+        # Handle both trimesh objects and numpy arrays
+        if isinstance(morph, np.ndarray):
+            morph_verts = morph
+        else:
+            morph_verts = np.array(morph.vertices, dtype=np.float32)
+
+        delta = morph_verts - base_verts
         # Store as flattened list for JSON
         morph_data["deltas"].append(delta.flatten().tolist())
 
@@ -286,38 +344,64 @@ async def process_timeline_generation(
 
     # Check if data is binary (all non-zero values are the same)
     unique_non_zero = np.unique(all_non_zero)
-    if len(unique_non_zero) == 1:
+    is_binary_data = len(unique_non_zero) == 1
+
+    if is_binary_data:
         # Binary/segmentation mask - use midpoint between 0 and the value
         global_threshold = unique_non_zero[0] / 2.0
         print(f"[Timeline] Detected binary data, using threshold: {global_threshold}")
     else:
         global_threshold = np.percentile(all_non_zero, 50)
-        print(f"[Timeline] Global threshold (50th percentile): {global_threshold}")
+        print(f"[Timeline] Detected continuous data, using threshold: {global_threshold}")
 
-    # Generate meshes for all frames
-    meshes = []
-    for i, voxels in enumerate(all_frame_voxels):
-        mesh = voxels_to_mesh(voxels, spacing, threshold=global_threshold)
-        if mesh is None:
-            raise ValueError(f"Failed to generate mesh for frame {i}")
-        meshes.append(mesh)
-        update_progress(job_id, 42 + int(48 * (i + 1) / total_frames),
-                       f"Generating mesh {i+1}/{total_frames}")
+    # Generate base mesh from first frame
+    update_progress(job_id, 45, "Generating base mesh...")
+    base_mesh = voxels_to_mesh(all_frame_voxels[0], spacing, threshold=global_threshold)
+    if base_mesh is None:
+        raise ValueError("Failed to generate base mesh from first frame")
 
-    update_progress(job_id, 92, "Exporting GLB and morph data...")
+    base_vertex_count = len(base_mesh.vertices)
+    print(f"[Timeline] Base mesh has {base_vertex_count} vertices")
 
-    # Step 5: Export base mesh as GLB + morph deltas as JSON
     glb_path = TIMELINE_MESH_DIR / f"{job_id}.glb"
     json_path = TIMELINE_MESH_DIR / f"{job_id}.morphs.json"
 
-    base_mesh = meshes[0]
-    morph_meshes = meshes[1:]
+    if is_binary_data:
+        # Binary data: all frames should have same topology, use marching cubes for each
+        print(f"[Timeline] Using marching cubes for all {total_frames} frames (binary data)")
+        meshes = [base_mesh]
+        for i, voxels in enumerate(all_frame_voxels[1:], 1):
+            mesh = voxels_to_mesh(voxels, spacing, threshold=global_threshold)
+            if mesh is None:
+                raise ValueError(f"Failed to generate mesh for frame {i}")
+            if len(mesh.vertices) != base_vertex_count:
+                print(f"[Timeline] Warning: Frame {i} has {len(mesh.vertices)} vertices, expected {base_vertex_count}")
+                # Fall back to displacement method for this frame
+                displaced = compute_vertex_displacements(base_mesh, voxels, spacing, global_threshold)
+                meshes.append(displaced)
+            else:
+                meshes.append(mesh)
+            update_progress(job_id, 45 + int(45 * i / (total_frames - 1)),
+                           f"Generating mesh {i+1}/{total_frames}")
+
+        morph_data = meshes[1:]
+    else:
+        # Continuous data: use displacement-based morphing to maintain topology
+        print(f"[Timeline] Using displacement morphing for {total_frames} frames (continuous data)")
+        morph_data = []
+        for i, voxels in enumerate(all_frame_voxels[1:], 1):
+            displaced = compute_vertex_displacements(base_mesh, voxels, spacing, global_threshold)
+            morph_data.append(displaced)
+            update_progress(job_id, 45 + int(45 * i / (total_frames - 1)),
+                           f"Computing displacements {i+1}/{total_frames}")
+
+    update_progress(job_id, 92, "Exporting GLB and morph data...")
 
     # Export GLB (base mesh only)
     export_timeline_glb(base_mesh, glb_path)
 
     # Export morph data as JSON
-    create_morph_data_json(base_mesh, morph_meshes, scan_timestamps, json_path)
+    create_morph_data_json(base_mesh, morph_data, scan_timestamps, json_path)
 
     update_progress(job_id, 100, "Complete")
 

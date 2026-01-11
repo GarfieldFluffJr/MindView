@@ -24,6 +24,11 @@ function ClippingSetup({ enabled }: { enabled: boolean }) {
 function BrainModel({ url, clippingEnabled, clippingPosition }: BrainModelProps) {
   const { scene } = useGLTF(url);
 
+  // Clone the scene to avoid issues with cached/shared scene objects
+  const clonedScene = useMemo(() => {
+    return scene.clone(true);
+  }, [scene]);
+
   const clippingPlane = useMemo(() => {
     return new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   }, []);
@@ -34,13 +39,9 @@ function BrainModel({ url, clippingEnabled, clippingPosition }: BrainModelProps)
 
   useEffect(() => {
     let meshIndex = 0;
-    const opacityLevels = [1.0, 1.0, 1.0, 1.0];
 
-    scene.traverse((child) => {
+    clonedScene.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        const hasVertexColors = child.geometry.attributes.color !== undefined;
-        const layerOpacity = opacityLevels[meshIndex % opacityLevels.length];
-
         // Compute normals for proper lighting
         if (child.geometry) {
           child.geometry.computeVertexNormals();
@@ -62,12 +63,26 @@ function BrainModel({ url, clippingEnabled, clippingPosition }: BrainModelProps)
         meshIndex++;
       }
     });
-  }, [scene, clippingEnabled, clippingPlane]);
+  }, [clonedScene, clippingEnabled, clippingPlane]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clonedScene.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry?.dispose();
+          if (child.material instanceof THREE.Material) {
+            child.material.dispose();
+          }
+        }
+      });
+    };
+  }, [clonedScene]);
 
   return (
     <>
       <Center>
-        <primitive object={scene} />
+        <primitive object={clonedScene} />
       </Center>
       {clippingEnabled && (
         <mesh position={[0, -clippingPosition, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -102,9 +117,17 @@ export default function BrainViewer({ meshUrl, onReset }: BrainViewerProps) {
   const [clippingEnabled, setClippingEnabled] = useState(false);
   const [clippingPosition, setClippingPosition] = useState(100);
 
+  // Clear GLTF cache when URL changes
+  useEffect(() => {
+    return () => {
+      useGLTF.clear();
+    };
+  }, [meshUrl]);
+
   return (
     <div className="relative w-full bg-gray-900 rounded-xl overflow-hidden" style={{ height: "70vh" }}>
       <Canvas
+        key={meshUrl}
         camera={{ position: [0, 0, 200], fov: 50 }}
         style={{ width: "100%", height: "100%" }}
         gl={{ alpha: false, sortObjects: true, localClippingEnabled: true }}
@@ -122,6 +145,7 @@ export default function BrainViewer({ meshUrl, onReset }: BrainViewerProps) {
         <ClippingSetup enabled={clippingEnabled} />
         <Suspense fallback={<LoadingSpinner />}>
           <BrainModel
+            key={meshUrl}
             url={meshUrl}
             clippingEnabled={clippingEnabled}
             clippingPosition={clippingPosition}
