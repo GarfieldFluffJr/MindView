@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import ConfirmModal from "./ConfirmModal";
+import { API_BASE_URL } from "@/lib/api";
 
 interface PatientWithStats {
   patient_id: number;
@@ -38,7 +39,7 @@ export default function ManagePatients({ onBack }: ManagePatientsProps) {
     setError(null);
 
     try {
-      const response = await fetch("http://localhost:8000/api/patients/stats/all");
+      const response = await fetch("${API_BASE_URL}/api/patients/stats/all");
 
       if (!response.ok) {
         throw new Error("Failed to fetch patients");
@@ -65,7 +66,7 @@ export default function ManagePatients({ onBack }: ManagePatientsProps) {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/patients/${patientToDelete.patient_id}?force=true`,
+        `${API_BASE_URL}/api/patients/${patientToDelete.patient_id}?force=true`,
         {
           method: "DELETE",
         }

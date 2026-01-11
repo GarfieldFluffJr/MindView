@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import CreateCaseModal from "./CreateCaseModal";
 import ConfirmModal from "./ConfirmModal";
+import { API_BASE_URL } from "@/lib/api";
 
 interface MedicalCase {
   case_id: number;
@@ -47,7 +48,7 @@ export default function CaseList({
   const fetchPatient = async () => {
     try {
       const response = await fetch(
-        `http://localhost:8000/api/patients/${patientId}`
+        `${API_BASE_URL}/api/patients/${patientId}`
       );
 
       if (!response.ok) {
@@ -67,7 +68,7 @@ export default function CaseList({
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/cases/?patient_id=${patientId}`
+        `${API_BASE_URL}/api/cases/?patient_id=${patientId}`
       );
 
       if (!response.ok) {
@@ -88,7 +89,7 @@ export default function CaseList({
     setError(null);
 
     try {
-      const response = await fetch("http://localhost:8000/api/cases/", {
+      const response = await fetch("${API_BASE_URL}/api/cases/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -128,7 +129,7 @@ export default function CaseList({
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/cases/${patientId}/${caseToDelete.case_id}?force=true`,
+        `${API_BASE_URL}/api/cases/${patientId}/${caseToDelete.case_id}?force=true`,
         {
           method: "DELETE",
         }

@@ -176,7 +176,9 @@ export default function BrainViewer({ meshUrl, regionStates, onReset }: BrainVie
   // Clear GLTF cache when URL changes
   useEffect(() => {
     return () => {
-      useGLTF.clear();
+      if (meshUrl) {
+        useGLTF.clear(meshUrl);
+      }
     };
   }, [meshUrl]);
 

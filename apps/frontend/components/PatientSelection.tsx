@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import ManagePatients from "./ManagePatients";
+import { API_BASE_URL } from "@/lib/api";
 
 interface PatientSelectionProps {
   onPatientSelected: (patientId: number) => void;
@@ -39,7 +40,7 @@ export default function PatientSelection({
     setSearching(true);
 
     try {
-      const response = await fetch("http://localhost:8000/api/patients/stats/all");
+      const response = await fetch("${API_BASE_URL}/api/patients/stats/all");
 
       if (!response.ok) {
         throw new Error("Failed to fetch patients");
@@ -70,7 +71,7 @@ export default function PatientSelection({
     try {
       // Verify patient exists
       const response = await fetch(
-        `http://localhost:8000/api/patients/${id}`
+        `${API_BASE_URL}/api/patients/${id}`
       );
 
       if (!response.ok) {
@@ -100,7 +101,7 @@ export default function PatientSelection({
     setError(null);
 
     try {
-      const response = await fetch("http://localhost:8000/api/patients/", {
+      const response = await fetch("${API_BASE_URL}/api/patients/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

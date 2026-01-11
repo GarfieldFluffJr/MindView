@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import ConfirmModal from "./ConfirmModal";
 import TimelineViewer from "./TimelineViewer";
 import {
+  API_BASE_URL,
   getTimelineInfo,
   generateTimeline,
   getTimelineStatus,
@@ -73,7 +74,7 @@ export default function FileList({
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/files/${patientId}/${caseId}`
+        `${API_BASE_URL}/api/files/${patientId}/${caseId}`
       );
 
       if (!response.ok) {
@@ -101,7 +102,7 @@ export default function FileList({
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/files/${patientId}/${caseId}/${fileToDelete.job_id}`,
+        `${API_BASE_URL}/api/files/${patientId}/${caseId}/${fileToDelete.job_id}`,
         {
           method: "DELETE",
         }
