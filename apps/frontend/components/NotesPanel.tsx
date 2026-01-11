@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { NoteResponse, getNotesForFile, createNote } from "@/lib/api";
 
 interface NotesPanelProps {
@@ -41,6 +41,11 @@ export default function NotesPanel({
   const [error, setError] = useState<string | null>(null);
   const [newNoteContent, setNewNoteContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const notesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    notesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const fetchNotes = useCallback(async () => {
     try {
@@ -59,6 +64,13 @@ export default function NotesPanel({
     fetchNotes();
   }, [fetchNotes]);
 
+  // Auto-scroll to bottom when notes load
+  useEffect(() => {
+    if (!loading && notes.length > 0) {
+      scrollToBottom();
+    }
+  }, [loading, notes.length]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNoteContent.trim() || submitting) return;
@@ -69,8 +81,9 @@ export default function NotesPanel({
         content: newNoteContent.trim(),
         doctor_name: "Dr. Smith",
       });
-      setNotes((prev) => [newNote, ...prev]);
+      setNotes((prev) => [...prev, newNote]);
       setNewNoteContent("");
+      setTimeout(scrollToBottom, 100);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add note");
     } finally {
@@ -123,28 +136,31 @@ export default function NotesPanel({
             <p className="text-gray-600 text-xs mt-1">Add the first note below</p>
           </div>
         ) : (
-          notes.map((note) => (
-            <div
-              key={note.note_id}
-              className="rounded-lg p-3 transition-all hover:shadow-md"
-              style={{ backgroundColor: note.color + "40" }}
-            >
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <span
-                  className="text-xs font-medium px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: note.color, color: "#1f2937" }}
-                >
-                  {note.doctor_name}
-                </span>
-                <span className="text-gray-400 text-[10px] whitespace-nowrap">
-                  {formatTimestamp(note.created_at)}
-                </span>
+          <>
+            {notes.map((note) => (
+              <div
+                key={note.note_id}
+                className="rounded-lg p-3 transition-all hover:shadow-md"
+                style={{ backgroundColor: note.color + "40" }}
+              >
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <span
+                    className="text-xs font-medium px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: note.color, color: "#1f2937" }}
+                  >
+                    {note.doctor_name}
+                  </span>
+                  <span className="text-gray-400 text-[10px] whitespace-nowrap">
+                    {formatTimestamp(note.created_at)}
+                  </span>
+                </div>
+                <p className="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">
+                  {note.content}
+                </p>
               </div>
-              <p className="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">
-                {note.content}
-              </p>
-            </div>
-          ))
+            ))}
+            <div ref={notesEndRef} />
+          </>
         )}
       </div>
 

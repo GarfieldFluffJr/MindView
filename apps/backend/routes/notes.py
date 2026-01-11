@@ -38,7 +38,7 @@ async def get_notes_for_file(patient_id: int, case_id: int, file_id: str):
             "patient_id": patient_id,
             "case_id": case_id,
             "file_id": file_id
-        }).sort("created_at", -1)
+        }).sort("created_at", 1)  # Ascending: oldest first, newest at bottom
 
         notes = await cursor.to_list(length=None)
 
