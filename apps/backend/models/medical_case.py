@@ -79,3 +79,9 @@ class MedicalCaseResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     metadata: dict = {}
+
+
+class MedicalCaseWithStats(MedicalCaseResponse):
+    """Schema for medical case API response with additional statistics."""
+
+    file_count: int = 0

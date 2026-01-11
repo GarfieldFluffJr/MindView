@@ -5,12 +5,12 @@ from fastapi import APIRouter, HTTPException, Query
 from pymongo.errors import DuplicateKeyError
 
 from database import Database
-from models.medical_case import MedicalCaseCreate, MedicalCaseUpdate, MedicalCaseResponse
+from models.medical_case import MedicalCaseCreate, MedicalCaseUpdate, MedicalCaseResponse, MedicalCaseWithStats
 
 router = APIRouter()
 
 
-@router.post("/", response_model=MedicalCaseResponse, status_code=201)
+@router.post("/", response_model=MedicalCaseWithStats, status_code=201)
 async def create_case(case: MedicalCaseCreate):
     """Create a new medical case with auto-generated case_id."""
     try:
@@ -39,10 +39,10 @@ async def create_case(case: MedicalCaseCreate):
 
         result = await Database.medical_cases.insert_one(case_doc)
 
-        # Retrieve and return the created case
+        # Retrieve and return the created case with file_count = 0
         created_case = await Database.medical_cases.find_one({"_id": result.inserted_id})
 
-        return MedicalCaseResponse(**created_case)
+        return MedicalCaseWithStats(**created_case, file_count=0)
 
     except HTTPException:
         raise
@@ -55,14 +55,14 @@ async def create_case(case: MedicalCaseCreate):
         raise HTTPException(status_code=500, detail=f"Failed to create case: {str(e)}")
 
 
-@router.get("/", response_model=List[MedicalCaseResponse])
+@router.get("/", response_model=List[MedicalCaseWithStats])
 async def list_cases(
     patient_id: Optional[int] = Query(None, description="Filter by patient ID"),
     status: Optional[str] = Query(None, description="Filter by status (active/closed/archived)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(20, ge=1, le=100, description="Maximum number of records to return"),
 ):
-    """List medical cases with optional filters and pagination."""
+    """List medical cases with optional filters and pagination, including file counts."""
     try:
         # Build query filter
         query = {}
@@ -80,7 +80,16 @@ async def list_cases(
         )
         cases = await cursor.to_list(length=limit)
 
-        return [MedicalCaseResponse(**case) for case in cases]
+        # Add file counts for each case
+        cases_with_stats = []
+        for case in cases:
+            file_count = await Database.scan_files.count_documents({
+                "patient_id": case["patient_id"],
+                "case_id": case["case_id"]
+            })
+            cases_with_stats.append(MedicalCaseWithStats(**case, file_count=file_count))
+
+        return cases_with_stats
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list cases: {str(e)}")

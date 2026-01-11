@@ -15,6 +15,7 @@ interface MedicalCase {
   created_at: string;
   updated_at: string;
   metadata: Record<string, unknown>;
+  file_count: number;
 }
 
 interface CaseListProps {
@@ -239,7 +240,7 @@ export default function CaseList({
                           {medicalCase.case_name}
                         </h3>
                         <p className="text-sm text-gray-500">
-                          Created {new Date(medicalCase.created_at).toLocaleDateString()}
+                          Created {new Date(medicalCase.created_at).toLocaleDateString()} • {medicalCase.file_count} file{medicalCase.file_count !== 1 ? "s" : ""}
                         </p>
                       </div>
                     </div>
@@ -270,7 +271,7 @@ export default function CaseList({
         title="Delete Case?"
         message={
           caseToDelete
-            ? `Are you sure you want to delete "${caseToDelete.case_name}" (Case ID: ${caseToDelete.case_id})? This will permanently delete the case and all associated files. This action cannot be undone.`
+            ? `Are you sure you want to delete "${caseToDelete.case_name}" (Case ID: ${caseToDelete.case_id})? This will permanently delete the case and ${caseToDelete.file_count} file${caseToDelete.file_count !== 1 ? "s" : ""}. This action cannot be undone.`
             : ""
         }
         confirmText={deleting ? "Deleting..." : "Delete"}

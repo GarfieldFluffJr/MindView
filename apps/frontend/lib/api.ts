@@ -138,6 +138,7 @@ export interface MedicalCaseResponse {
   created_at: string;
   updated_at: string;
   metadata: Record<string, unknown>;
+  file_count: number;
 }
 
 export async function getCasesForPatient(patientId: number): Promise<MedicalCaseResponse[]> {
