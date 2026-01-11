@@ -29,6 +29,7 @@ export default function CaseList({
   onChangePatient,
 }: CaseListProps) {
   const [cases, setCases] = useState<MedicalCase[]>([]);
+  const [patientName, setPatientName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -38,8 +39,26 @@ export default function CaseList({
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    fetchPatient();
     fetchCases();
   }, [patientId]);
+
+  const fetchPatient = async () => {
+    try {
+      const response = await fetch(
+        `http://localhost:8000/api/patients/${patientId}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch patient");
+      }
+
+      const data = await response.json();
+      setPatientName(data.first_name);
+    } catch (err) {
+      console.error("Failed to load patient name:", err);
+    }
+  };
 
   const fetchCases = async () => {
     setLoading(true);
@@ -140,7 +159,7 @@ export default function CaseList({
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">
-              Cases for Patient {patientId}
+              Cases for Patient {patientId}{patientName ? ` (${patientName})` : ""}
             </h2>
             <button
               onClick={onChangePatient}
