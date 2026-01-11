@@ -114,7 +114,7 @@ def segmentation_to_meshes(
                 "color": color,
                 "category": category,
                 "opacity": 1.0 if is_tumor else (0.3 if is_outer else 0.8),
-                "defaultVisible": True if is_tumor else (category not in ["cortex", "white_matter"]),
+                "defaultVisible": True,
                 "vertexCount": len(mesh.vertices),
                 "faceCount": len(mesh.faces),
             })

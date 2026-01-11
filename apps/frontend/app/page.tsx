@@ -53,11 +53,11 @@ export default function Home() {
       getMetadata(jobId)
         .then((data) => {
           setMetadata(data);
-          // Initialize region states from metadata
+          // Initialize region states from metadata (always visible by default)
           const initialStates: Record<string, RegionState> = {};
           for (const region of data.regions) {
             initialStates[region.name] = {
-              visible: region.defaultVisible,
+              visible: true,
               opacity: region.opacity,
             };
           }
@@ -80,9 +80,10 @@ export default function Home() {
     setState("file-list");
   }, []);
 
-  const handleFileSelectedFromList = useCallback((jobId: string, filename: string) => {
+  const handleFileSelectedFromList = useCallback((selectedJobId: string, filename: string) => {
     setFileName(filename);
-    setMeshUrl(getMeshUrl(jobId));
+    setJobId(selectedJobId);
+    setMeshUrl(getMeshUrl(selectedJobId));
     setState("viewing");
   }, []);
 
@@ -275,7 +276,6 @@ export default function Home() {
         )}
 
         {state === "viewing" && meshUrl && (
-
           <div className="w-full">
             <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 max-w-2xl mx-auto">
               <div className="text-sm text-blue-800">
@@ -305,28 +305,30 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            
-            {/* Region Controls - Left Panel */}
-            {metadata && metadata.regions.length > 0 && (
-              <div className="w-72 flex-shrink-0">
-                <RegionControls
-                  regions={metadata.regions}
+
+            <div className="flex gap-4">
+              {/* Region Controls - Left Panel */}
+              {metadata && metadata.regions.length > 0 && (
+                <div className="w-72 flex-shrink-0">
+                  <RegionControls
+                    regions={metadata.regions}
+                    regionStates={regionStates}
+                    onRegionChange={handleRegionChange}
+                    onShowAll={handleShowAll}
+                    onHideAll={handleHideAll}
+                    hasTumor={metadata.has_tumor}
+                  />
+                </div>
+              )}
+
+              {/* Brain Viewer - Main Area */}
+              <div className="flex-1">
+                <BrainViewer
+                  meshUrl={meshUrl}
                   regionStates={regionStates}
-                  onRegionChange={handleRegionChange}
-                  onShowAll={handleShowAll}
-                  onHideAll={handleHideAll}
-                  hasTumor={metadata.has_tumor}
+                  onReset={handleReset}
                 />
               </div>
-            )}
-            
-            {/* Brain Viewer - Main Area */}
-            <div className="flex-1">
-              <BrainViewer
-                meshUrl={meshUrl}
-                regionStates={regionStates}
-                onReset={handleReset}
-              />
             </div>
           </div>
         )}

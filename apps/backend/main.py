@@ -513,17 +513,22 @@ async def get_mesh(job_id: str):
 @app.get("/api/mesh/{job_id}/metadata")
 async def get_mesh_metadata(job_id: str):
     """Get metadata for the generated mesh including region information."""
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
+    metadata_path = None
 
-    job = jobs[job_id]
+    # First check in-memory jobs dict
+    if job_id in jobs:
+        job = jobs[job_id]
+        if job["status"] != "completed":
+            raise HTTPException(status_code=400, detail="Mesh not ready yet")
+        metadata_path = job.get("metadata_path")
+    else:
+        # Check database for existing file
+        file_doc = await Database.scan_files.find_one({"job_id": job_id})
+        if file_doc and file_doc.get("status") == "completed":
+            # File exists in database, use default metadata path
+            metadata_path = METADATA_DIR / f"{job_id}.json"
 
-    if job["status"] != "completed":
-        raise HTTPException(status_code=400, detail="Mesh not ready yet")
-
-    metadata_path = job.get("metadata_path")
     if not metadata_path:
-        # Fallback to default path
         metadata_path = METADATA_DIR / f"{job_id}.json"
 
     if not Path(metadata_path).exists():
