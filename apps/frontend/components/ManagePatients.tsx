@@ -141,6 +141,9 @@ export default function ManagePatients({ onBack }: ManagePatientsProps) {
                     Patient ID
                   </th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">
+                    Name
+                  </th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">
                     Created
                   </th>
                   <th className="text-center py-3 px-4 font-semibold text-gray-700">
@@ -162,7 +165,12 @@ export default function ManagePatients({ onBack }: ManagePatientsProps) {
                   >
                     <td className="py-3 px-4">
                       <div className="font-medium text-gray-900">
-                        Patient {patient.patient_id}
+                        {patient.patient_id}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="text-gray-900">
+                        {patient.first_name || <span className="text-gray-400 italic">No name</span>}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">
@@ -199,7 +207,7 @@ export default function ManagePatients({ onBack }: ManagePatientsProps) {
         title="Delete Patient?"
         message={
           patientToDelete
-            ? `Are you sure you want to delete Patient ${patientToDelete.patient_id}? This will permanently delete the patient along with ${patientToDelete.case_count} case(s) and ${patientToDelete.file_count} file(s). This action cannot be undone.`
+            ? `Are you sure you want to delete ${patientToDelete.first_name ? `"${patientToDelete.first_name}"` : `Patient ${patientToDelete.patient_id}`}? This will permanently delete the patient along with ${patientToDelete.case_count} case(s) and ${patientToDelete.file_count} file(s). This action cannot be undone.`
             : ""
         }
         confirmText={deleting ? "Deleting..." : "Delete"}
