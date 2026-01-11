@@ -68,6 +68,15 @@ function BrainModel({ url, clippingEnabled, clippingPosition, regionStates }: Br
           clipShadows: true,
         });
 
+        // Fix backface lighting by flipping normals when viewing from behind
+        material.onBeforeCompile = (shader) => {
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <normal_fragment_maps>',
+            `#include <normal_fragment_maps>
+             if (!gl_FrontFacing) normal = -normal;`
+          );
+        };
+
         child.material = material;
         materialsRef.current.set(meshName, material);
       }
@@ -104,7 +113,7 @@ function BrainModel({ url, clippingEnabled, clippingPosition, regionStates }: Br
           if (child.material instanceof THREE.MeshPhongMaterial) {
             child.material.opacity = state.opacity;
             child.material.transparent = state.opacity < 1.0;
-            child.material.depthWrite = state.opacity >= 0.9;
+            child.material.depthWrite = true;
             child.material.needsUpdate = true;
           }
         }
