@@ -384,3 +384,79 @@ export function getTimelineMeshUrl(jobId: string): string {
 export function getTimelineMorphDataUrl(jobId: string): string {
   return `${API_BASE_URL}/api/timeline/mesh/${jobId}/morphs`;
 }
+
+// Notes API types
+export interface NoteResponse {
+  note_id: string;
+  file_id: string;
+  patient_id: number;
+  case_id: number;
+  content: string;
+  doctor_name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface CreateNoteRequest {
+  content: string;
+  doctor_name?: string;
+}
+
+export async function getNotesForFile(
+  patientId: number,
+  caseId: number,
+  fileId: string
+): Promise<NoteResponse[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/notes/${patientId}/${caseId}/${fileId}`
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(extractErrorMessage(error, "Failed to get notes"));
+  }
+
+  return response.json();
+}
+
+export async function createNote(
+  patientId: number,
+  caseId: number,
+  fileId: string,
+  noteData: CreateNoteRequest
+): Promise<NoteResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/notes/${patientId}/${caseId}/${fileId}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(noteData),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(extractErrorMessage(error, "Failed to create note"));
+  }
+
+  return response.json();
+}
+
+export async function deleteNote(
+  patientId: number,
+  caseId: number,
+  fileId: string,
+  noteId: string
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/notes/${patientId}/${caseId}/${fileId}/${noteId}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(extractErrorMessage(error, "Failed to delete note"));
+  }
+}
