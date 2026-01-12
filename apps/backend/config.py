@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # CORS settings
-    cors_origins: str = "http://localhost:3000,http://localhost:5173,https://mind-view-gamma.vercel.app/"  # Comma-separated list of allowed origins
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,https://mind-view-gamma.vercel.app"  # Comma-separated list of allowed origins
 
     # MongoDB settings
     mongodb_uri: str = "mongodb://localhost:27017"
