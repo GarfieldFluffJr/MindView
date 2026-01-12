@@ -28,7 +28,7 @@ MindView was inspired by the need for a clearer, shared way to understand tumor 
 
 - **3D Segmentation/Visualization**: We used splicing techniques (Nibabel, Skimage) to create an interactive 3d model of brain and tumor models. Using segmentation, data can be visualized in many colors and opacity can be changed.
 
-- **Temporal Analysis**:
+- **Temporal Analysis**: Each scan is resampled to ensure consistent shaping using scipy with linear interpolation. Intermediate frames are generated linearly by interpolating where each voxel point will be by calculating its temporal distance from both scans. Each voxel grid is then converted to a mesh using skimage. Displayed on the frontend with the React useFrame hook to render the linearly altered shape every frame based on its difference between the two scans.
 
 - **Gemini Chatbot Diagnosis Assistance**: We integrated Gemini via Google’s Developer API as a case feedback and explanation assistant, constrained to analyze pre-computed tumor metrics and highlight potentially concerning patterns for clinician review. The system is designed exclusively for physician facing use, where outputs are interpreted within established clinical workflows and subject to professional review.
 
