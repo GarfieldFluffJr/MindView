@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import CreateCaseModal from "./CreateCaseModal";
 import ConfirmModal from "./ConfirmModal";
 import DeleteDisabledModal from "./DeleteDisabledModal";
+import CreateDisabledModal from "./CreateDisabledModal";
 import { API_BASE_URL } from "@/lib/api";
 import { isHostedSite } from "@/lib/environment";
 
@@ -42,6 +43,7 @@ export default function CaseList({
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteDisabledModalOpen, setDeleteDisabledModalOpen] = useState(false);
+  const [createDisabledModalOpen, setCreateDisabledModalOpen] = useState(false);
   const isHosted = isHostedSite();
 
   useEffect(() => {
@@ -89,6 +91,13 @@ export default function CaseList({
   };
 
   const handleCreateCase = async (caseName: string) => {
+    // Show modal on hosted site instead of creating
+    if (isHosted) {
+      setCreateModalOpen(false);
+      setCreateDisabledModalOpen(true);
+      return;
+    }
+
     setCreating(true);
     setError(null);
 
@@ -293,6 +302,12 @@ export default function CaseList({
       <DeleteDisabledModal
         isOpen={deleteDisabledModalOpen}
         onClose={() => setDeleteDisabledModalOpen(false)}
+      />
+
+      <CreateDisabledModal
+        isOpen={createDisabledModalOpen}
+        onClose={() => setCreateDisabledModalOpen(false)}
+        type="case"
       />
     </div>
   );

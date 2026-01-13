@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import ManagePatients from "./ManagePatients";
+import CreateDisabledModal from "./CreateDisabledModal";
 import { API_BASE_URL } from "@/lib/api";
+import { isHostedSite } from "@/lib/environment";
 
 interface PatientSelectionProps {
   onPatientSelected: (patientId: number) => void;
@@ -27,6 +29,8 @@ export default function PatientSelection({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [createDisabledModalOpen, setCreateDisabledModalOpen] = useState(false);
+  const isHosted = isHostedSite();
 
   const handleSearchByName = async (query: string) => {
     setNameSearchQuery(query);
@@ -94,6 +98,12 @@ export default function PatientSelection({
   const handleCreateNew = async () => {
     if (!patientName.trim()) {
       setError("Please enter a patient name.");
+      return;
+    }
+
+    // Show modal on hosted site instead of creating
+    if (isHosted) {
+      setCreateDisabledModalOpen(true);
       return;
     }
 
@@ -437,5 +447,13 @@ export default function PatientSelection({
     return <ManagePatients onBack={() => setMode(null)} />;
   }
 
-  return null;
+  return (
+    <>
+      <CreateDisabledModal
+        isOpen={createDisabledModalOpen}
+        onClose={() => setCreateDisabledModalOpen(false)}
+        type="patient"
+      />
+    </>
+  );
 }
