@@ -38,6 +38,7 @@ async def run_timeline_processing(
 ):
     """Background task to run timeline processing."""
     import traceback
+    from services.gridfs_service import upload_to_gridfs
 
     try:
         print(f"[Timeline {job_id}] Starting processing...")
@@ -55,7 +56,56 @@ async def run_timeline_processing(
             update_progress=update_job_progress
         )
 
-        print(f"[Timeline {job_id}] Processing complete, updating status...")
+        print(f"[Timeline {job_id}] Processing complete, uploading to GridFS...")
+
+        # Upload mesh and morphs to GridFS
+        mesh_gridfs_id = None
+        morphs_gridfs_id = None
+
+        glb_path = Path(mesh_path)
+        morphs_path = TIMELINE_MESH_DIR / f"{job_id}.morphs.json"
+
+        # Upload GLB mesh
+        if glb_path.exists():
+            try:
+                with open(glb_path, "rb") as f:
+                    mesh_content = f.read()
+
+                mesh_gridfs_id = await upload_to_gridfs(
+                    file_data=mesh_content,
+                    filename=f"timeline_{job_id}.glb",
+                    content_type="model/gltf-binary",
+                    metadata={
+                        "job_id": job_id,
+                        "patient_id": patient_id,
+                        "case_id": case_id,
+                        "file_type": "timeline_mesh"
+                    }
+                )
+                print(f"[Timeline {job_id}] Uploaded mesh to GridFS: {mesh_gridfs_id}")
+            except Exception as e:
+                print(f"[Timeline {job_id}] Warning: Failed to upload mesh to GridFS: {e}")
+
+        # Upload morphs JSON
+        if morphs_path.exists():
+            try:
+                with open(morphs_path, "rb") as f:
+                    morphs_content = f.read()
+
+                morphs_gridfs_id = await upload_to_gridfs(
+                    file_data=morphs_content,
+                    filename=f"timeline_{job_id}.morphs.json",
+                    content_type="application/json",
+                    metadata={
+                        "job_id": job_id,
+                        "patient_id": patient_id,
+                        "case_id": case_id,
+                        "file_type": "timeline_morphs"
+                    }
+                )
+                print(f"[Timeline {job_id}] Uploaded morphs to GridFS: {morphs_gridfs_id}")
+            except Exception as e:
+                print(f"[Timeline {job_id}] Warning: Failed to upload morphs to GridFS: {e}")
 
         # Update job status
         timeline_jobs[job_id]["status"] = "completed"
@@ -69,7 +119,9 @@ async def run_timeline_processing(
             {"$set": {
                 "status": "completed",
                 "completed_at": datetime.utcnow(),
-                "mesh_path": mesh_path
+                "mesh_path": mesh_path,
+                "mesh_gridfs_id": mesh_gridfs_id,
+                "morphs_gridfs_id": morphs_gridfs_id
             }}
         )
         print(f"[Timeline {job_id}] Done!")
@@ -144,31 +196,77 @@ async def get_timeline_status(job_id: str):
 @router.get("/mesh/{job_id}")
 async def get_timeline_mesh(job_id: str):
     """Download the generated timeline base mesh GLB."""
+    from bson import ObjectId
+    from services.gridfs_service import stream_from_gridfs
+
+    # Check database for timeline job
+    timeline_doc = await Database.db["timeline_jobs"].find_one({"job_id": job_id})
+
+    if not timeline_doc:
+        raise HTTPException(status_code=404, detail="Timeline job not found")
+
+    if timeline_doc.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Timeline not ready yet")
+
+    # Try to get from GridFS first
+    mesh_gridfs_id = timeline_doc.get("mesh_gridfs_id")
+    if mesh_gridfs_id:
+        print(f"Streaming timeline mesh from GridFS: {mesh_gridfs_id}")
+        return await stream_from_gridfs(
+            file_id=ObjectId(mesh_gridfs_id),
+            filename=f"timeline_{job_id}.glb",
+            content_type="model/gltf-binary"
+        )
+
+    # Fallback to filesystem for old timelines
     mesh_path = TIMELINE_MESH_DIR / f"{job_id}.glb"
+    if mesh_path.exists():
+        print(f"Fallback: Serving timeline mesh from filesystem")
+        return FileResponse(
+            str(mesh_path),
+            media_type="model/gltf-binary",
+            filename=f"timeline_{job_id}.glb"
+        )
 
-    if not mesh_path.exists():
-        raise HTTPException(status_code=404, detail="Timeline mesh not found")
-
-    return FileResponse(
-        str(mesh_path),
-        media_type="model/gltf-binary",
-        filename=f"timeline_{job_id}.glb"
-    )
+    raise HTTPException(status_code=404, detail="Timeline mesh not found")
 
 
 @router.get("/mesh/{job_id}/morphs")
 async def get_timeline_morph_data(job_id: str):
     """Download the morph target delta data as JSON."""
+    from bson import ObjectId
+    from services.gridfs_service import stream_from_gridfs
+
+    # Check database for timeline job
+    timeline_doc = await Database.db["timeline_jobs"].find_one({"job_id": job_id})
+
+    if not timeline_doc:
+        raise HTTPException(status_code=404, detail="Timeline job not found")
+
+    if timeline_doc.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Timeline not ready yet")
+
+    # Try to get from GridFS first
+    morphs_gridfs_id = timeline_doc.get("morphs_gridfs_id")
+    if morphs_gridfs_id:
+        print(f"Streaming timeline morphs from GridFS: {morphs_gridfs_id}")
+        return await stream_from_gridfs(
+            file_id=ObjectId(morphs_gridfs_id),
+            filename=f"timeline_{job_id}.morphs.json",
+            content_type="application/json"
+        )
+
+    # Fallback to filesystem for old timelines
     json_path = TIMELINE_MESH_DIR / f"{job_id}.morphs.json"
+    if json_path.exists():
+        print(f"Fallback: Serving timeline morphs from filesystem")
+        return FileResponse(
+            str(json_path),
+            media_type="application/json",
+            filename=f"timeline_{job_id}.morphs.json"
+        )
 
-    if not json_path.exists():
-        raise HTTPException(status_code=404, detail="Timeline morph data not found")
-
-    return FileResponse(
-        str(json_path),
-        media_type="application/json",
-        filename=f"timeline_{job_id}.morphs.json"
-    )
+    raise HTTPException(status_code=404, detail="Timeline morph data not found")
 
 
 @router.get("/{patient_id}/{case_id}", response_model=TimelineMetadata)

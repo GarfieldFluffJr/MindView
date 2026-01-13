@@ -284,7 +284,7 @@ export default function Home() {
                       Please Note
                     </h3>
                     <p className="text-sm text-yellow-800">
-                      Our server is running on a free cloud provider. Loading times may take up to 2 minutes and certain control features may be disabled.
+                      Our server is running on a free cloud provider. Load times may take up to 2 minutes and build times up to 15 minutes. Certain control features are also disabled due to memory restrictions and if exceeded, data will fail to fetch. Please contact louieyin6@gmail.com for any assistance. Thank you!
                     </p>
                   </div>
                 </div>

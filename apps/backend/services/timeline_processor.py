@@ -1,5 +1,6 @@
 """Timeline mesh generation with voxel interpolation for morph targets."""
 import json
+import os
 import numpy as np
 import nibabel as nib
 from pathlib import Path
@@ -8,6 +9,11 @@ from scipy.ndimage import gaussian_filter, zoom
 from skimage.measure import marching_cubes
 import trimesh
 from datetime import datetime
+
+# Detect if running on a memory-constrained hosted environment
+def is_hosted_environment() -> bool:
+    """Check if running on Render or other hosted service with limited memory."""
+    return os.getenv("RENDER") is not None or os.getenv("RAILWAY_ENVIRONMENT") is not None
 
 # Paths
 BASE_DIR = Path(__file__).parent.parent
@@ -18,11 +24,14 @@ TIMELINE_MESH_DIR = BASE_DIR / "storage" / "timeline_meshes"
 TIMELINE_MESH_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_nifti_voxels(job_id: str) -> Tuple[np.ndarray, tuple]:
+async def load_nifti_voxels(job_id: str, downsample_factor: float = 1.0) -> Tuple[np.ndarray, tuple]:
     """Load voxel data from a NIfTI file by job_id.
+
+    Downloads from GridFS if not available locally. Downsamples on hosted environments.
 
     Args:
         job_id: The job ID of the scan file
+        downsample_factor: Factor to downsample by (1.0 = full res, 0.5 = half res)
 
     Returns:
         Tuple of (voxel_data, spacing)
@@ -36,11 +45,49 @@ def load_nifti_voxels(job_id: str) -> Tuple[np.ndarray, tuple]:
     elif nii_path.exists():
         path = nii_path
     else:
-        raise FileNotFoundError(f"NIfTI file not found for job {job_id}")
+        # File not on filesystem - try to download from GridFS
+        print(f"[Timeline] NIfTI file not found locally for {job_id}, downloading from GridFS...")
+        from database import Database
+        from services.gridfs_service import download_from_gridfs
+        from bson import ObjectId
+
+        # Get file record from database
+        file_doc = await Database.scan_files.find_one({"job_id": job_id})
+        if not file_doc:
+            raise FileNotFoundError(f"NIfTI file not found in database for job {job_id}")
+
+        # Get GridFS ID for original file
+        original_file = file_doc.get("original_file", {})
+        gridfs_id = original_file.get("gridfs_id")
+        filename = original_file.get("filename", f"{job_id}.nii.gz")
+
+        if not gridfs_id:
+            raise FileNotFoundError(f"NIfTI file not in GridFS for job {job_id}")
+
+        # Download from GridFS
+        print(f"[Timeline] Downloading {filename} from GridFS (ID: {gridfs_id})...")
+        file_data = await download_from_gridfs(ObjectId(gridfs_id))
+
+        # Determine extension and save to disk temporarily
+        ext = ".nii.gz" if filename.endswith(".nii.gz") else ".nii"
+        path = UPLOAD_DIR / f"{job_id}{ext}"
+
+        with open(path, "wb") as f:
+            f.write(file_data)
+
+        print(f"[Timeline] Downloaded {len(file_data)} bytes to {path}")
 
     img = nib.load(str(path))
     data = img.get_fdata()
+    original_shape = data.shape
     spacing = img.header.get_zooms()[:3]
+
+    # Downsample to reduce memory usage
+    if downsample_factor < 1.0:
+        print(f"[Timeline] Downsampling from {original_shape} by factor {downsample_factor} to save memory...")
+        data = zoom(data, downsample_factor, order=1)
+        spacing = tuple(s / downsample_factor for s in spacing)
+        print(f"[Timeline] Downsampled to {data.shape}")
 
     return data, spacing
 
@@ -96,7 +143,7 @@ def voxels_to_mesh(
     voxels: np.ndarray,
     spacing: tuple,
     threshold: float,
-    simplify_target: int = 100000
+    simplify_target: int = None  # Auto-determined based on environment
 ) -> Optional[trimesh.Trimesh]:
     """Convert voxel data to mesh using marching cubes.
 
@@ -104,12 +151,17 @@ def voxels_to_mesh(
         voxels: 3D numpy array of voxel data
         spacing: Voxel spacing tuple (x, y, z)
         threshold: Isosurface threshold value
-        simplify_target: Target number of faces after simplification
+        simplify_target: Target number of faces after simplification (auto if None)
 
     Returns:
         Trimesh object or None if no mesh could be generated
     """
+    # Auto-determine simplification target based on environment
+    if simplify_target is None:
+        simplify_target = 50000 if is_hosted_environment() else 100000
+
     print(f"[voxels_to_mesh] Input shape: {voxels.shape}, spacing: {spacing}, threshold: {threshold}")
+    print(f"[voxels_to_mesh] Simplify target: {simplify_target} faces")
     print(f"[voxels_to_mesh] Voxel stats - min: {voxels.min():.2f}, max: {voxels.max():.2f}, mean: {voxels.mean():.2f}")
 
     # Smooth to reduce noise
@@ -289,15 +341,38 @@ async def process_timeline_generation(
     Returns:
         Path to the generated GLB file
     """
-    update_progress(job_id, 5, "Loading NIfTI files...")
+    # Memory optimization: Only apply on hosted environments (Render, Railway, etc.)
+    is_hosted = is_hosted_environment()
+    downsample_factor = 1.0  # Default: full resolution
 
-    # Step 1: Load all voxel data
+    if is_hosted:
+        print(f"[Timeline {job_id}] Detected hosted environment - applying memory optimizations")
+        # Limit to 3 scans max on hosted to prevent OOM
+        MAX_SCANS = 3
+        if len(scan_job_ids) > MAX_SCANS:
+            print(f"[Timeline {job_id}] Memory optimization: Limiting from {len(scan_job_ids)} scans to {MAX_SCANS}")
+            # Take first, middle, and last scan for good temporal coverage
+            indices = [0, len(scan_job_ids) // 2, len(scan_job_ids) - 1]
+            scan_job_ids = [scan_job_ids[i] for i in indices]
+            scan_timestamps = [scan_timestamps[i] for i in indices]
+
+        # Reduce interpolation frames to save memory
+        frames_between = min(frames_between, 5)  # Max 5 frames between scans
+        print(f"[Timeline {job_id}] Using {frames_between} interpolation frames for memory efficiency")
+
+        # Downsample to half resolution (1/8 memory usage)
+        downsample_factor = 0.5
+        print(f"[Timeline {job_id}] Downsampling to {downsample_factor}x for memory efficiency")
+
+    update_progress(job_id, 5, f"Loading NIfTI files{'(downsampled)' if is_hosted else ''}...")
+
+    # Step 1: Load voxel data
     voxels_list = []
     spacing = None
     for i, scan_id in enumerate(scan_job_ids):
         update_progress(job_id, 5 + int(10 * (i + 1) / len(scan_job_ids)),
                        f"Loading scan {i+1}/{len(scan_job_ids)}")
-        voxels, sp = load_nifti_voxels(scan_id)
+        voxels, sp = await load_nifti_voxels(scan_id, downsample_factor=downsample_factor)
         voxels_list.append(voxels)
         if spacing is None:
             spacing = sp
@@ -306,6 +381,7 @@ async def process_timeline_generation(
 
     # Step 2: Align grids
     aligned_voxels = align_voxel_grids(voxels_list)
+    del voxels_list  # Free memory
 
     update_progress(job_id, 22, "Interpolating voxels...")
 
@@ -326,8 +402,7 @@ async def process_timeline_generation(
         all_frame_voxels.append(aligned_voxels[i + 1])
         scan_frame_indices.append(len(all_frame_voxels) - 1)
 
-        update_progress(job_id, 22 + int(18 * (i + 1) / (len(aligned_voxels) - 1)),
-                       f"Interpolating between scans {i+1} and {i+2}")
+    del aligned_voxels  # Free memory
 
     update_progress(job_id, 42, "Generating meshes...")
     total_frames = len(all_frame_voxels)

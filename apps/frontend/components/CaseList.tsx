@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import CreateCaseModal from "./CreateCaseModal";
 import ConfirmModal from "./ConfirmModal";
 import DeleteDisabledModal from "./DeleteDisabledModal";
+import CreateDisabledModal from "./CreateDisabledModal";
 import { API_BASE_URL } from "@/lib/api";
 import { isHostedSite } from "@/lib/environment";
 
@@ -42,6 +43,7 @@ export default function CaseList({
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteDisabledModalOpen, setDeleteDisabledModalOpen] = useState(false);
+  const [createDisabledModalOpen, setCreateDisabledModalOpen] = useState(false);
   const isHosted = isHostedSite();
 
   useEffect(() => {
@@ -179,7 +181,13 @@ export default function CaseList({
             </button>
           </div>
           <button
-            onClick={() => setCreateModalOpen(true)}
+            onClick={() => {
+              if (isHosted) {
+                setCreateDisabledModalOpen(true);
+              } else {
+                setCreateModalOpen(true);
+              }
+            }}
             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
           >
             Create New Case
@@ -293,6 +301,12 @@ export default function CaseList({
       <DeleteDisabledModal
         isOpen={deleteDisabledModalOpen}
         onClose={() => setDeleteDisabledModalOpen(false)}
+      />
+
+      <CreateDisabledModal
+        isOpen={createDisabledModalOpen}
+        onClose={() => setCreateDisabledModalOpen(false)}
+        type="case"
       />
     </div>
   );

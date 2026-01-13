@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import ManagePatients from "./ManagePatients";
+import CreateDisabledModal from "./CreateDisabledModal";
 import { API_BASE_URL } from "@/lib/api";
+import { isHostedSite } from "@/lib/environment";
 
 interface PatientSelectionProps {
   onPatientSelected: (patientId: number) => void;
@@ -27,6 +29,8 @@ export default function PatientSelection({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [createDisabledModalOpen, setCreateDisabledModalOpen] = useState(false);
+  const isHosted = isHostedSite();
 
   const handleSearchByName = async (query: string) => {
     setNameSearchQuery(query);
@@ -94,6 +98,12 @@ export default function PatientSelection({
   const handleCreateNew = async () => {
     if (!patientName.trim()) {
       setError("Please enter a patient name.");
+      return;
+    }
+
+    // Show modal on hosted site instead of creating
+    if (isHosted) {
+      setCreateDisabledModalOpen(true);
       return;
     }
 
@@ -356,80 +366,88 @@ export default function PatientSelection({
 
   if (mode === "create") {
     return (
-      <div className="max-w-md mx-auto">
-        <div className="bg-white rounded-xl shadow-lg p-8">
-          <button
-            onClick={() => {
-              setMode(null);
-              setPatientName("");
-              setError(null);
-            }}
-            className="mb-6 text-blue-600 hover:text-blue-800 flex items-center gap-2"
-            disabled={loading}
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-            Back
-          </button>
-
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">
-            Create New Patient
-          </h2>
-
-          <div className="space-y-4">
-            <div>
-              <label
-                htmlFor="patient-name"
-                className="block text-sm font-medium text-gray-700 mb-2"
-              >
-                Patient Name
-              </label>
-              <input
-                id="patient-name"
-                type="text"
-                value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !loading) {
-                    handleCreateNew();
-                  }
-                }}
-                placeholder="Enter patient name"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled={loading}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                A patient ID will be auto-generated
-              </p>
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            )}
-
+      <>
+        <div className="max-w-md mx-auto">
+          <div className="bg-white rounded-xl shadow-lg p-8">
             <button
-              onClick={handleCreateNew}
-              disabled={loading || !patientName.trim()}
-              className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              onClick={() => {
+                setMode(null);
+                setPatientName("");
+                setError(null);
+              }}
+              className="mb-6 text-blue-600 hover:text-blue-800 flex items-center gap-2"
+              disabled={loading}
             >
-              {loading ? "Creating Patient..." : "Create Patient"}
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
+              </svg>
+              Back
             </button>
+
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">
+              Create New Patient
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <label
+                  htmlFor="patient-name"
+                  className="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Patient Name
+                </label>
+                <input
+                  id="patient-name"
+                  type="text"
+                  value={patientName}
+                  onChange={(e) => setPatientName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !loading) {
+                      handleCreateNew();
+                    }
+                  }}
+                  placeholder="Enter patient name"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={loading}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  A patient ID will be auto-generated
+                </p>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
+
+              <button
+                onClick={handleCreateNew}
+                disabled={loading || !patientName.trim()}
+                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              >
+                {loading ? "Creating Patient..." : "Create Patient"}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+
+        <CreateDisabledModal
+          isOpen={createDisabledModalOpen}
+          onClose={() => setCreateDisabledModalOpen(false)}
+          type="patient"
+        />
+      </>
     );
   }
 

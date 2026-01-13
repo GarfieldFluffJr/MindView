@@ -391,7 +391,7 @@ export default function CaseFeedback({
           </div>
 
           {/* Input Area */}
-          <div className="border-t border-gray-800 bg-gray-900/50 p-4">
+          <div className="border-t border-gray-800 bg-gray-900/50 p-4 pb-24">
             <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto">
               <div className="flex gap-3">
                 <input
