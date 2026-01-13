@@ -241,7 +241,7 @@ function ModalityDropzone({
         border-2 border-dashed rounded-lg p-4 text-center cursor-pointer
         transition-all duration-200
         ${isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-gray-400"}
-        ${disabled || isHosted ? "opacity-50 cursor-not-allowed" : ""}
+        ${disabled ? "opacity-50 cursor-not-allowed" : ""}
       `}
     >
       <input {...getInputProps()} disabled={isHosted} />

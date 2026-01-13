@@ -10,14 +10,14 @@ export default function UploadDisabledModal({ isOpen, onClose }: UploadDisabledM
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
+      {/* Backdrop with blur */}
       <div
-        className="absolute inset-0 bg-black bg-opacity-50"
+        className="absolute inset-0 backdrop-blur-sm bg-white/30"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4 z-10">
+      <div className="relative bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4 z-10 border-2 border-gray-200">
         <div className="flex flex-col items-center text-center space-y-4">
           {/* Icon */}
           <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center">
