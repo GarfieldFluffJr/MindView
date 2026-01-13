@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import ConfirmModal from "./ConfirmModal";
+import DeleteDisabledModal from "./DeleteDisabledModal";
 import TimelineViewer from "./TimelineViewer";
 import {
   API_BASE_URL,
@@ -12,6 +13,7 @@ import {
   TimelineMetadata,
   TimelineJobStatus,
 } from "@/lib/api";
+import { isHostedSite } from "@/lib/environment";
 
 interface ScanFile {
   job_id: string;
@@ -55,6 +57,8 @@ export default function FileList({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<ScanFile | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteDisabledModalOpen, setDeleteDisabledModalOpen] = useState(false);
+  const isHosted = isHostedSite();
 
   // Timeline state
   const [showTimeline, setShowTimeline] = useState(false);
@@ -91,6 +95,10 @@ export default function FileList({
   };
 
   const handleDeleteClick = (file: ScanFile) => {
+    if (isHosted) {
+      setDeleteDisabledModalOpen(true);
+      return;
+    }
     setFileToDelete(file);
     setDeleteModalOpen(true);
   };
@@ -425,6 +433,11 @@ export default function FileList({
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
         isDestructive
+      />
+
+      <DeleteDisabledModal
+        isOpen={deleteDisabledModalOpen}
+        onClose={() => setDeleteDisabledModalOpen(false)}
       />
 
       {/* Timeline Viewer */}

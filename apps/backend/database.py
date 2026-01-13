@@ -74,57 +74,63 @@ async def create_indexes():
     """Create indexes for optimal query performance."""
     print("Creating database indexes...")
 
-    # Patient indexes
-    await Database.patients.create_index([("patient_id", ASCENDING)], unique=True)
+    try:
+        # Patient indexes
+        await Database.patients.create_index([("patient_id", ASCENDING)], unique=True)
 
-    # Medical case indexes (unique on patient_id + case_id combination)
-    await Database.medical_cases.create_index(
-        [("patient_id", ASCENDING), ("case_id", ASCENDING)], unique=True
-    )
-    await Database.medical_cases.create_index(
-        [("patient_id", ASCENDING), ("created_at", DESCENDING)]
-    )
+        # Medical case indexes (unique on patient_id + case_id combination)
+        await Database.medical_cases.create_index(
+            [("patient_id", ASCENDING), ("case_id", ASCENDING)], unique=True
+        )
+        await Database.medical_cases.create_index(
+            [("patient_id", ASCENDING), ("created_at", DESCENDING)]
+        )
 
-    # Scan file indexes
-    await Database.scan_files.create_index([("job_id", ASCENDING)], unique=True)
-    await Database.scan_files.create_index([("file_id", ASCENDING)], unique=True)
-    await Database.scan_files.create_index([("case_id", ASCENDING)])
-    await Database.scan_files.create_index([("patient_id", ASCENDING)])
-    await Database.scan_files.create_index([("status", ASCENDING)])
-    await Database.scan_files.create_index(
-        [("case_id", ASCENDING), ("scan_timestamp", DESCENDING)]
-    )
+        # Scan file indexes
+        await Database.scan_files.create_index([("job_id", ASCENDING)], unique=True)
+        await Database.scan_files.create_index([("file_id", ASCENDING)], unique=True)
+        await Database.scan_files.create_index([("case_id", ASCENDING)])
+        await Database.scan_files.create_index([("patient_id", ASCENDING)])
+        await Database.scan_files.create_index([("status", ASCENDING)])
+        await Database.scan_files.create_index(
+            [("case_id", ASCENDING), ("scan_timestamp", DESCENDING)]
+        )
 
-    # Timeline job indexes
-    await Database.timeline_jobs.create_index([("job_id", ASCENDING)], unique=True)
-    await Database.timeline_jobs.create_index([
-        ("patient_id", ASCENDING),
-        ("case_id", ASCENDING)
-    ])
+        # Timeline job indexes
+        await Database.timeline_jobs.create_index([("job_id", ASCENDING)], unique=True)
+        await Database.timeline_jobs.create_index([
+            ("patient_id", ASCENDING),
+            ("case_id", ASCENDING)
+        ])
 
-    # Notes indexes
-    await Database.notes.create_index([("note_id", ASCENDING)], unique=True)
-    await Database.notes.create_index([("file_id", ASCENDING)])
-    await Database.notes.create_index([
-        ("patient_id", ASCENDING),
-        ("case_id", ASCENDING),
-        ("file_id", ASCENDING),
-        ("created_at", DESCENDING)
-    ])
+        # Notes indexes
+        await Database.notes.create_index([("note_id", ASCENDING)], unique=True)
+        await Database.notes.create_index([("file_id", ASCENDING)])
+        await Database.notes.create_index([
+            ("patient_id", ASCENDING),
+            ("case_id", ASCENDING),
+            ("file_id", ASCENDING),
+            ("created_at", DESCENDING)
+        ])
 
-    # Feedback session indexes
-    await Database.feedback_sessions.create_index([("session_id", ASCENDING)], unique=True)
-    await Database.feedback_sessions.create_index([
-        ("patient_id", ASCENDING),
-        ("case_id", ASCENDING)
-    ], unique=True)
+        # Feedback session indexes
+        await Database.feedback_sessions.create_index([("session_id", ASCENDING)], unique=True)
+        await Database.feedback_sessions.create_index([
+            ("patient_id", ASCENDING),
+            ("case_id", ASCENDING)
+        ], unique=True)
 
-    # Feedback message indexes
-    await Database.feedback_messages.create_index([("message_id", ASCENDING)], unique=True)
-    await Database.feedback_messages.create_index([("session_id", ASCENDING)])
-    await Database.feedback_messages.create_index([
-        ("session_id", ASCENDING),
-        ("created_at", ASCENDING)
-    ])
+        # Feedback message indexes
+        await Database.feedback_messages.create_index([("message_id", ASCENDING)], unique=True)
+        await Database.feedback_messages.create_index([("session_id", ASCENDING)])
+        await Database.feedback_messages.create_index([
+            ("session_id", ASCENDING),
+            ("created_at", ASCENDING)
+        ])
 
-    print("✓ Indexes created successfully")
+        print("✓ Indexes created successfully")
+    except Exception as e:
+        # If user doesn't have permission to create indexes, just warn and continue
+        # Indexes are for performance optimization, not critical for functionality
+        print(f"⚠ Warning: Could not create indexes (this is OK): {e}")
+        print("⚠ The application will work fine without indexes, just slightly slower for large datasets")

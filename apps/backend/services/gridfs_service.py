@@ -72,6 +72,9 @@ async def stream_from_gridfs(
     """
     Stream a file from GridFS for HTTP download.
 
+    For 3D models (GLB files), downloads entire file for faster rendering.
+    For other large files, streams in chunks.
+
     Args:
         file_id: The GridFS file ID
         filename: The name to use for the downloaded file
@@ -84,22 +87,39 @@ async def stream_from_gridfs(
         HTTPException: If streaming fails or file not found
     """
     try:
-        grid_out = await Database.gridfs_bucket.open_download_stream(file_id)
+        # For 3D models, download entire file for better performance
+        if content_type == "model/gltf-binary" or filename.endswith(".glb"):
+            print(f"✓ Loading complete GLB file {file_id} from GridFS for fast rendering")
+            file_data = await download_from_gridfs(file_id)
 
-        async def file_iterator():
-            """Iterate over file chunks for streaming."""
-            while True:
-                chunk = await grid_out.read(1024 * 1024)  # 1MB chunks
-                if not chunk:
-                    break
-                yield chunk
+            return StreamingResponse(
+                iter([file_data]),
+                media_type=content_type,
+                headers={
+                    "Content-Length": str(len(file_data)),
+                    "Content-Disposition": f'inline; filename="{filename}"',
+                    "Cache-Control": "public, max-age=31536000",  # Cache for 1 year
+                    "Accept-Ranges": "bytes",
+                },
+            )
+        else:
+            # For other files, stream in chunks
+            grid_out = await Database.gridfs_bucket.open_download_stream(file_id)
 
-        print(f"✓ Streaming file {file_id} from GridFS as {filename}")
-        return StreamingResponse(
-            file_iterator(),
-            media_type=content_type,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+            async def file_iterator():
+                """Iterate over file chunks for streaming."""
+                while True:
+                    chunk = await grid_out.read(1024 * 1024)  # 1MB chunks
+                    if not chunk:
+                        break
+                    yield chunk
+
+            print(f"✓ Streaming file {file_id} from GridFS as {filename}")
+            return StreamingResponse(
+                file_iterator(),
+                media_type=content_type,
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
     except Exception as e:
         print(f"✗ Failed to stream file {file_id} from GridFS: {e}")
         raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")

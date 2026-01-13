@@ -28,6 +28,7 @@ from services.synthseg_service import (
 from services.mesh_generation import segmentation_to_meshes, intensity_to_meshes
 from services.model_manager import SegmentationError
 from services.tumor_inference import TumorInference, run_tumor_detection
+from services.gridfs_service import upload_to_gridfs, stream_from_gridfs
 
 app = FastAPI(title="MindView API", version="1.0.0")
 
@@ -382,9 +383,29 @@ async def upload_file(
     content = await file.read()
     print(f"File size: {len(content)} bytes")
 
+    # Upload original file to GridFS
+    print(f"Uploading original file to GridFS...")
+    try:
+        original_gridfs_id = await upload_to_gridfs(
+            file_data=content,
+            filename=file.filename,
+            content_type=file.content_type or "application/octet-stream",
+            metadata={
+                "job_id": job_id,
+                "patient_id": patient_id,
+                "case_id": case_id,
+                "file_type": "original"
+            }
+        )
+        print(f"Original file uploaded to GridFS with ID: {original_gridfs_id}")
+    except Exception as gridfs_err:
+        print(f"ERROR: Failed to upload to GridFS: {gridfs_err}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload file to database: {str(gridfs_err)}")
+
+    # Also save to local disk for processing (temporary)
     with open(input_path, "wb") as f:
         f.write(content)
-    print(f"File saved to {input_path}")
+    print(f"File saved to local disk for processing: {input_path}")
 
     jobs[job_id] = {
         "status": "queued",
@@ -404,6 +425,29 @@ async def upload_file(
     print(f"Processing complete. Status: {jobs[job_id]['status']}")
     print(f"Error: {jobs[job_id].get('error')}")
 
+    # If processing succeeded, upload mesh to GridFS
+    mesh_gridfs_id = None
+    if jobs[job_id]["status"] == "completed" and output_path.exists():
+        print(f"Uploading processed mesh to GridFS...")
+        try:
+            with open(output_path, "rb") as mesh_file:
+                mesh_content = mesh_file.read()
+
+            mesh_gridfs_id = await upload_to_gridfs(
+                file_data=mesh_content,
+                filename=f"{job_id}.glb",
+                content_type="model/gltf-binary",
+                metadata={
+                    "job_id": job_id,
+                    "patient_id": patient_id,
+                    "case_id": case_id,
+                    "file_type": "mesh"
+                }
+            )
+            print(f"Mesh uploaded to GridFS with ID: {mesh_gridfs_id}")
+        except Exception as mesh_gridfs_err:
+            print(f"Warning: Failed to upload mesh to GridFS: {mesh_gridfs_err}")
+
     # Parse scan_date if provided
     scan_timestamp = datetime.utcnow()
     if scan_date:
@@ -421,11 +465,16 @@ async def upload_file(
         "case_id": case_id,
         "patient_id": patient_id,
         "original_file": {
+            "gridfs_id": original_gridfs_id,
             "filename": file.filename,
             "content_type": file.content_type or "application/octet-stream",
             "size_bytes": len(content),
             "file_type": "nifti" if is_nifti else "obj"
         },
+        "processed_mesh": {
+            "gridfs_id": mesh_gridfs_id,
+            "size_bytes": len(mesh_content) if mesh_gridfs_id else None
+        } if mesh_gridfs_id else None,
         "status": jobs[job_id]["status"],
         "progress": jobs[job_id]["progress"],
         "error": jobs[job_id].get("error"),
@@ -573,8 +622,9 @@ async def upload_multimodal_files(
     job_id = str(uuid.uuid4())
     print(f"Job ID: {job_id}")
 
-    # Save all 4 files
+    # Save all 4 files to GridFS and local disk
     modality_paths = {}
+    modality_gridfs_ids = {}
     total_size = 0
 
     for name, file in [("t1", t1), ("t1ce", t1ce), ("t2", t2), ("flair", flair)]:
@@ -584,6 +634,26 @@ async def upload_multimodal_files(
         content = await file.read()
         total_size += len(content)
 
+        # Upload to GridFS
+        try:
+            gridfs_id = await upload_to_gridfs(
+                file_data=content,
+                filename=file.filename,
+                content_type=file.content_type or "application/octet-stream",
+                metadata={
+                    "job_id": job_id,
+                    "patient_id": patient_id,
+                    "case_id": case_id,
+                    "modality": name,
+                    "file_type": "original_multimodal"
+                }
+            )
+            modality_gridfs_ids[name] = gridfs_id
+            print(f"Uploaded {name} to GridFS with ID: {gridfs_id}")
+        except Exception as gridfs_err:
+            print(f"Warning: Failed to upload {name} to GridFS: {gridfs_err}")
+
+        # Save to local disk for processing
         with open(file_path, "wb") as f:
             f.write(content)
 
@@ -610,6 +680,30 @@ async def upload_multimodal_files(
 
     print(f"Processing complete. Status: {jobs[job_id]['status']}")
 
+    # If processing succeeded, upload mesh to GridFS
+    mesh_gridfs_id = None
+    if jobs[job_id]["status"] == "completed" and output_path.exists():
+        print(f"Uploading processed multimodal mesh to GridFS...")
+        try:
+            with open(output_path, "rb") as mesh_file:
+                mesh_content = mesh_file.read()
+
+            mesh_gridfs_id = await upload_to_gridfs(
+                file_data=mesh_content,
+                filename=f"{job_id}.glb",
+                content_type="model/gltf-binary",
+                metadata={
+                    "job_id": job_id,
+                    "patient_id": patient_id,
+                    "case_id": case_id,
+                    "file_type": "mesh",
+                    "multimodal": True
+                }
+            )
+            print(f"Multimodal mesh uploaded to GridFS with ID: {mesh_gridfs_id}")
+        except Exception as mesh_gridfs_err:
+            print(f"Warning: Failed to upload multimodal mesh to GridFS: {mesh_gridfs_err}")
+
     # Parse scan_date if provided
     scan_timestamp = datetime.utcnow()
     if scan_date:
@@ -634,8 +728,13 @@ async def upload_multimodal_files(
                 "t1ce": t1ce.filename,
                 "t2": t2.filename,
                 "flair": flair.filename
-            }
+            },
+            "modality_gridfs_ids": {k: str(v) for k, v in modality_gridfs_ids.items()} if modality_gridfs_ids else None
         },
+        "processed_mesh": {
+            "gridfs_id": mesh_gridfs_id,
+            "size_bytes": len(mesh_content) if mesh_gridfs_id else None
+        } if mesh_gridfs_id else None,
         "status": jobs[job_id]["status"],
         "progress": jobs[job_id]["progress"],
         "error": jobs[job_id].get("error"),
@@ -678,29 +777,39 @@ async def get_status(job_id: str):
 
 @app.get("/api/mesh/{job_id}")
 async def get_mesh(job_id: str):
-    """Download the generated mesh file."""
-    mesh_path = None
+    """Download the generated mesh file from GridFS."""
+    from bson import ObjectId
 
-    # First check in-memory jobs dict
-    if job_id in jobs:
-        job = jobs[job_id]
-        if job["status"] != "completed":
-            raise HTTPException(status_code=400, detail="Mesh not ready yet")
-        mesh_path = job.get("mesh_path")
-    else:
-        # Check database for existing file
-        file_doc = await Database.scan_files.find_one({"job_id": job_id})
-        if file_doc and file_doc.get("status") == "completed":
-            # Construct mesh path from job_id
-            mesh_path = str(MESH_DIR / f"{job_id}.glb")
+    # Check database for file metadata
+    file_doc = await Database.scan_files.find_one({"job_id": job_id})
 
-    if not mesh_path or not Path(mesh_path).exists():
+    if not file_doc:
         raise HTTPException(status_code=404, detail="Mesh file not found")
 
-    return FileResponse(
-        mesh_path,
-        media_type="model/gltf-binary",
+    if file_doc.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Mesh not ready yet")
+
+    # Get GridFS ID from processed_mesh field
+    processed_mesh = file_doc.get("processed_mesh")
+    if not processed_mesh or not processed_mesh.get("gridfs_id"):
+        # Fallback: Try local filesystem for old files
+        mesh_path = MESH_DIR / f"{job_id}.glb"
+        if mesh_path.exists():
+            return FileResponse(
+                mesh_path,
+                media_type="model/gltf-binary",
+                filename=f"{job_id}.glb",
+            )
+        raise HTTPException(status_code=404, detail="Mesh file not found in database")
+
+    mesh_gridfs_id = processed_mesh["gridfs_id"]
+    print(f"Streaming mesh from GridFS with ID: {mesh_gridfs_id}")
+
+    # Stream file from GridFS
+    return await stream_from_gridfs(
+        file_id=ObjectId(mesh_gridfs_id),
         filename=f"{job_id}.glb",
+        content_type="model/gltf-binary"
     )
 
 

@@ -2,12 +2,15 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
+# Base directory (robust across local + Render)
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # CORS settings
-    cors_origins: str = "http://localhost:3000"  # Comma-separated list of allowed origins
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,https://mind-view-gamma.vercel.app"  # Comma-separated list of allowed origins
 
     # MongoDB settings
     mongodb_uri: str = "mongodb://localhost:27017"
@@ -18,8 +21,8 @@ class Settings(BaseSettings):
     max_file_size_mb: int = 500
 
     # Model settings for brain segmentation
-    models_dir: str = "./models"
-    tumor_model_path: str = "./models/monai/swin_unetr_brats.pt"
+    models_dir: str = str(BASE_DIR / "models")
+    tumor_model_path: str = str(BASE_DIR / "./models/monai/swin_unetr_brats.pt")
 
     # Inference settings
     use_gpu: bool = True  # Try GPU first, fallback to CPU
