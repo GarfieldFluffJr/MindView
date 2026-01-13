@@ -61,7 +61,8 @@ MindView was inspired by the need for a clearer, shared way to understand tumor 
 * Disabled control operations (upload file, delete file, create patients and cases) since server memory is extremely low and cannot handle it
 
 * Added notices for users to expect long build and load times since backend goes inactive after a while
-Decided to store entire scan files in MongoDB with GridFS instead of storing locally and only storing metadata so it can persist across multiple devices, and fixed the segmentation so the user can change opacity and inspect different parts of the brain on different devices
+
+* Decided to store entire scan files in MongoDB with GridFS instead of storing locally and only storing metadata so it can persist across multiple devices, and fixed the segmentation so the user can change opacity and inspect different parts of the brain on different devices
 
 * Optimized the timeline by reducing frames and number of voxels and compressed scan files so server can process the timeline
 
