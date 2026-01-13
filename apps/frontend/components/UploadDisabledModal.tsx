@@ -20,9 +20,9 @@ export default function UploadDisabledModal({ isOpen, onClose }: UploadDisabledM
       <div className="relative bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4 z-10 border-2 border-gray-200">
         <div className="flex flex-col items-center text-center space-y-4">
           {/* Icon */}
-          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-yellow-600"
+              className="w-8 h-8 text-red-600"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -43,10 +43,10 @@ export default function UploadDisabledModal({ isOpen, onClose }: UploadDisabledM
 
           {/* Message */}
           <p className="text-gray-600">
-            File uploads are currently disabled on the hosted version of this site.
+            File uploads are currently disabled because our server cannot handle large file uploads and server hosting is expensive.
           </p>
           <p className="text-sm text-gray-500">
-            Please run the application locally to upload and process brain scan files.
+            Please reach out to louieyin6@gmail.com if you wish to process your brain scan files.
           </p>
 
           {/* Close Button */}
