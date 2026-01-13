@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import ConfirmModal from "./ConfirmModal";
+import DeleteDisabledModal from "./DeleteDisabledModal";
 import { API_BASE_URL } from "@/lib/api";
+import { isHostedSite } from "@/lib/environment";
 
 interface PatientWithStats {
   patient_id: number;
@@ -29,6 +31,8 @@ export default function ManagePatients({ onBack }: ManagePatientsProps) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState<PatientWithStats | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteDisabledModalOpen, setDeleteDisabledModalOpen] = useState(false);
+  const isHosted = isHostedSite();
 
   useEffect(() => {
     fetchPatients();
@@ -55,6 +59,10 @@ export default function ManagePatients({ onBack }: ManagePatientsProps) {
   };
 
   const handleDeleteClick = (patient: PatientWithStats) => {
+    if (isHosted) {
+      setDeleteDisabledModalOpen(true);
+      return;
+    }
     setPatientToDelete(patient);
     setDeleteModalOpen(true);
   };
@@ -216,6 +224,11 @@ export default function ManagePatients({ onBack }: ManagePatientsProps) {
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
         isDestructive
+      />
+
+      <DeleteDisabledModal
+        isOpen={deleteDisabledModalOpen}
+        onClose={() => setDeleteDisabledModalOpen(false)}
       />
     </div>
   );

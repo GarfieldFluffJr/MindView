@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import CreateCaseModal from "./CreateCaseModal";
 import ConfirmModal from "./ConfirmModal";
+import DeleteDisabledModal from "./DeleteDisabledModal";
 import { API_BASE_URL } from "@/lib/api";
+import { isHostedSite } from "@/lib/environment";
 
 interface MedicalCase {
   case_id: number;
@@ -39,6 +41,8 @@ export default function CaseList({
   const [caseToDelete, setCaseToDelete] = useState<MedicalCase | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteDisabledModalOpen, setDeleteDisabledModalOpen] = useState(false);
+  const isHosted = isHostedSite();
 
   useEffect(() => {
     fetchPatient();
@@ -118,6 +122,10 @@ export default function CaseList({
   };
 
   const handleDeleteClick = (medicalCase: MedicalCase) => {
+    if (isHosted) {
+      setDeleteDisabledModalOpen(true);
+      return;
+    }
     setCaseToDelete(medicalCase);
     setDeleteModalOpen(true);
   };
@@ -280,6 +288,11 @@ export default function CaseList({
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
         isDestructive
+      />
+
+      <DeleteDisabledModal
+        isOpen={deleteDisabledModalOpen}
+        onClose={() => setDeleteDisabledModalOpen(false)}
       />
     </div>
   );
