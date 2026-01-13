@@ -425,8 +425,9 @@ async def upload_file(
     print(f"Processing complete. Status: {jobs[job_id]['status']}")
     print(f"Error: {jobs[job_id].get('error')}")
 
-    # If processing succeeded, upload mesh to GridFS
+    # If processing succeeded, upload mesh to GridFS and load metadata
     mesh_gridfs_id = None
+    mesh_metadata = {}
     if jobs[job_id]["status"] == "completed" and output_path.exists():
         print(f"Uploading processed mesh to GridFS...")
         try:
@@ -447,6 +448,41 @@ async def upload_file(
             print(f"Mesh uploaded to GridFS with ID: {mesh_gridfs_id}")
         except Exception as mesh_gridfs_err:
             print(f"Warning: Failed to upload mesh to GridFS: {mesh_gridfs_err}")
+
+        # Load metadata from JSON file and store in database
+        metadata_path = METADATA_DIR / f"{job_id}.json"
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, "r") as f:
+                    mesh_metadata = json.load(f)
+                print(f"Loaded metadata from {metadata_path}: {len(mesh_metadata.get('regions', []))} regions")
+
+                # Validate metadata has required fields
+                if "regions" not in mesh_metadata:
+                    print(f"Warning: Metadata missing 'regions' field, adding empty array")
+                    mesh_metadata["regions"] = []
+                if "has_tumor" not in mesh_metadata:
+                    mesh_metadata["has_tumor"] = False
+                if "total_regions" not in mesh_metadata:
+                    mesh_metadata["total_regions"] = len(mesh_metadata.get("regions", []))
+
+            except Exception as metadata_err:
+                print(f"ERROR: Failed to load metadata: {metadata_err}")
+                # Initialize with minimal metadata structure
+                mesh_metadata = {
+                    "regions": [],
+                    "has_tumor": False,
+                    "total_regions": 0,
+                    "segmentation_method": "error_loading_metadata"
+                }
+        else:
+            print(f"Warning: Metadata file not found at {metadata_path}")
+            mesh_metadata = {
+                "regions": [],
+                "has_tumor": False,
+                "total_regions": 0,
+                "segmentation_method": "metadata_file_missing"
+            }
 
     # Parse scan_date if provided
     scan_timestamp = datetime.utcnow()
@@ -480,7 +516,7 @@ async def upload_file(
         "error": jobs[job_id].get("error"),
         "uploaded_at": datetime.utcnow(),
         "scan_timestamp": scan_timestamp,
-        "metadata": {}
+        "metadata": mesh_metadata
     }
 
     try:
@@ -680,8 +716,9 @@ async def upload_multimodal_files(
 
     print(f"Processing complete. Status: {jobs[job_id]['status']}")
 
-    # If processing succeeded, upload mesh to GridFS
+    # If processing succeeded, upload mesh to GridFS and load metadata
     mesh_gridfs_id = None
+    mesh_metadata = {"multimodal": True}
     if jobs[job_id]["status"] == "completed" and output_path.exists():
         print(f"Uploading processed multimodal mesh to GridFS...")
         try:
@@ -703,6 +740,43 @@ async def upload_multimodal_files(
             print(f"Multimodal mesh uploaded to GridFS with ID: {mesh_gridfs_id}")
         except Exception as mesh_gridfs_err:
             print(f"Warning: Failed to upload multimodal mesh to GridFS: {mesh_gridfs_err}")
+
+        # Load metadata from JSON file and store in database
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, "r") as f:
+                    loaded_metadata = json.load(f)
+                    mesh_metadata.update(loaded_metadata)
+                print(f"Loaded multimodal metadata from {metadata_path}: {len(mesh_metadata.get('regions', []))} regions")
+
+                # Validate metadata has required fields
+                if "regions" not in mesh_metadata:
+                    print(f"Warning: Multimodal metadata missing 'regions' field, adding empty array")
+                    mesh_metadata["regions"] = []
+                if "has_tumor" not in mesh_metadata:
+                    mesh_metadata["has_tumor"] = False
+                if "total_regions" not in mesh_metadata:
+                    mesh_metadata["total_regions"] = len(mesh_metadata.get("regions", []))
+
+            except Exception as metadata_err:
+                print(f"ERROR: Failed to load multimodal metadata: {metadata_err}")
+                # Initialize with minimal metadata structure
+                mesh_metadata = {
+                    "multimodal": True,
+                    "regions": [],
+                    "has_tumor": False,
+                    "total_regions": 0,
+                    "segmentation_method": "error_loading_metadata"
+                }
+        else:
+            print(f"Warning: Multimodal metadata file not found at {metadata_path}")
+            mesh_metadata = {
+                "multimodal": True,
+                "regions": [],
+                "has_tumor": False,
+                "total_regions": 0,
+                "segmentation_method": "metadata_file_missing"
+            }
 
     # Parse scan_date if provided
     scan_timestamp = datetime.utcnow()
@@ -740,7 +814,7 @@ async def upload_multimodal_files(
         "error": jobs[job_id].get("error"),
         "uploaded_at": datetime.utcnow(),
         "scan_timestamp": scan_timestamp,
-        "metadata": {"multimodal": True}
+        "metadata": mesh_metadata
     }
 
     try:
@@ -816,37 +890,57 @@ async def get_mesh(job_id: str):
 @app.get("/api/mesh/{job_id}/metadata")
 async def get_mesh_metadata(job_id: str):
     """Get metadata for the generated mesh including region information."""
-    metadata_path = None
+    print(f"[METADATA REQUEST] Job ID: {job_id}")
 
-    # First check in-memory jobs dict
-    if job_id in jobs:
-        job = jobs[job_id]
-        if job["status"] != "completed":
-            raise HTTPException(status_code=400, detail="Mesh not ready yet")
-        metadata_path = job.get("metadata_path")
-    else:
-        # Check database for existing file
-        file_doc = await Database.scan_files.find_one({"job_id": job_id})
-        if file_doc and file_doc.get("status") == "completed":
-            # File exists in database, use default metadata path
-            metadata_path = METADATA_DIR / f"{job_id}.json"
+    # Check database for file and its metadata
+    file_doc = await Database.scan_files.find_one({"job_id": job_id})
 
-    if not metadata_path:
-        metadata_path = METADATA_DIR / f"{job_id}.json"
+    if not file_doc:
+        print(f"[METADATA ERROR] File not found for job_id: {job_id}")
+        raise HTTPException(status_code=404, detail="File not found")
 
-    if not Path(metadata_path).exists():
-        # Return minimal metadata if file doesn't exist
-        return JSONResponse({
-            "regions": [],
-            "has_tumor": False,
-            "total_regions": 0,
-            "segmentation_method": "unknown",
-        })
+    if file_doc.get("status") != "completed":
+        print(f"[METADATA ERROR] Mesh not ready yet for job_id: {job_id}")
+        raise HTTPException(status_code=400, detail="Mesh not ready yet")
 
-    with open(metadata_path, "r") as f:
-        metadata = json.load(f)
+    # Get metadata from database
+    metadata = file_doc.get("metadata", {})
+    print(f"[METADATA DEBUG] Database metadata keys: {list(metadata.keys()) if metadata else 'None'}")
+    print(f"[METADATA DEBUG] Has regions field: {'regions' in metadata}")
+    print(f"[METADATA DEBUG] Regions count: {len(metadata.get('regions', []))}")
 
-    return JSONResponse(metadata)
+    # If metadata exists in database with regions, return it
+    if metadata and "regions" in metadata and len(metadata.get("regions", [])) > 0:
+        print(f"[METADATA SUCCESS] Returning metadata from database for {job_id} with {len(metadata['regions'])} regions")
+        return JSONResponse(metadata)
+
+    # Check if metadata exists but has empty regions
+    if metadata and "regions" in metadata:
+        print(f"[METADATA WARNING] Database has metadata but regions array is empty for {job_id}")
+        # Still return it as it might be a valid "no regions" case
+        return JSONResponse(metadata)
+
+    # Fallback: Try to load from filesystem for old files
+    print(f"[METADATA FALLBACK] Attempting to load from filesystem for {job_id}")
+    metadata_path = METADATA_DIR / f"{job_id}.json"
+    if metadata_path.exists():
+        print(f"[METADATA FALLBACK] Found metadata file at {metadata_path}")
+        try:
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+            print(f"[METADATA FALLBACK] Loaded {len(metadata.get('regions', []))} regions from filesystem")
+            return JSONResponse(metadata)
+        except Exception as e:
+            print(f"[METADATA ERROR] Failed to load from filesystem: {e}")
+
+    # Return minimal metadata if neither database nor file exists
+    print(f"[METADATA WARNING] No metadata found for {job_id}, returning minimal metadata")
+    return JSONResponse({
+        "regions": [],
+        "has_tumor": False,
+        "total_regions": 0,
+        "segmentation_method": "not_found",
+    })
 
 
 @app.get("/")
