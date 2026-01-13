@@ -2,6 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
+import { isHostedSite } from "@/lib/environment";
+import UploadDisabledModal from "./UploadDisabledModal";
 
 interface FileUploadProps {
   onFileSelect: (file: File, scanDate?: string) => void;
@@ -11,6 +13,8 @@ interface FileUploadProps {
 export default function FileUpload({ onFileSelect, disabled }: FileUploadProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [scanDate, setScanDate] = useState<string>("");
+  const [showDisabledModal, setShowDisabledModal] = useState(false);
+  const isHosted = isHostedSite();
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -27,6 +31,14 @@ export default function FileUpload({ onFileSelect, disabled }: FileUploadProps) 
     }
   };
 
+  const handleClick = (e: React.MouseEvent) => {
+    if (isHosted) {
+      e.preventDefault();
+      e.stopPropagation();
+      setShowDisabledModal(true);
+    }
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
@@ -35,22 +47,27 @@ export default function FileUpload({ onFileSelect, disabled }: FileUploadProps) 
       "model/obj": [".obj"],
     },
     maxFiles: 1,
-    disabled,
+    disabled: disabled || isHosted,
+    noClick: isHosted,
+    noDrag: isHosted,
   });
+
+  const rootProps = getRootProps();
 
   return (
     <div className="space-y-6">
       {!selectedFile ? (
         <div
-          {...getRootProps()}
+          {...rootProps}
+          onClick={isHosted ? handleClick : rootProps.onClick}
           className={`
             border-2 border-dashed rounded-xl p-12 text-center cursor-pointer
             transition-all duration-200
             ${isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-gray-400"}
-            ${disabled ? "opacity-50 cursor-not-allowed" : ""}
+            ${disabled || isHosted ? "opacity-50 cursor-not-allowed" : ""}
           `}
         >
-          <input {...getInputProps()} />
+          <input {...getInputProps()} disabled={isHosted} />
           <div className="flex flex-col items-center gap-4">
             <svg
               className="w-16 h-16 text-gray-400"
@@ -142,6 +159,11 @@ export default function FileUpload({ onFileSelect, disabled }: FileUploadProps) 
           </button>
         </div>
       )}
+
+      <UploadDisabledModal
+        isOpen={showDisabledModal}
+        onClose={() => setShowDisabledModal(false)}
+      />
     </div>
   );
 }

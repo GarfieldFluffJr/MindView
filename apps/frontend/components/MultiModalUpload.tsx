@@ -3,6 +3,8 @@
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { MultiModalFiles } from "@/lib/api";
+import { isHostedSite } from "@/lib/environment";
+import UploadDisabledModal from "./UploadDisabledModal";
 
 type Modality = "t1" | "t1ce" | "t2" | "flair";
 
@@ -28,6 +30,8 @@ export default function MultiModalUpload({ onFilesSelect, disabled }: MultiModal
   const [files, setFiles] = useState<Partial<MultiModalFiles>>({});
   const [scanDate, setScanDate] = useState<string>("");
   const [activeDropzone, setActiveDropzone] = useState<Modality | null>(null);
+  const [showDisabledModal, setShowDisabledModal] = useState(false);
+  const isHosted = isHostedSite();
 
   const handleFileDrop = useCallback((modality: Modality, acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -78,6 +82,8 @@ export default function MultiModalUpload({ onFilesSelect, disabled }: MultiModal
             isActive={activeDropzone === modality.key}
             onDragEnter={() => setActiveDropzone(modality.key)}
             onDragLeave={() => setActiveDropzone(null)}
+            isHosted={isHosted}
+            onShowModal={() => setShowDisabledModal(true)}
           />
         ))}
       </div>
@@ -132,6 +138,11 @@ export default function MultiModalUpload({ onFilesSelect, disabled }: MultiModal
           </button>
         </div>
       )}
+
+      <UploadDisabledModal
+        isOpen={showDisabledModal}
+        onClose={() => setShowDisabledModal(false)}
+      />
     </div>
   );
 }
@@ -145,6 +156,8 @@ interface ModalityDropzoneProps {
   isActive: boolean;
   onDragEnter: () => void;
   onDragLeave: () => void;
+  isHosted: boolean;
+  onShowModal: () => void;
 }
 
 function ModalityDropzone({
@@ -156,7 +169,17 @@ function ModalityDropzone({
   isActive,
   onDragEnter,
   onDragLeave,
+  isHosted,
+  onShowModal,
 }: ModalityDropzoneProps) {
+  const handleClick = (e: React.MouseEvent) => {
+    if (isHosted) {
+      e.preventDefault();
+      e.stopPropagation();
+      onShowModal();
+    }
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
@@ -164,10 +187,14 @@ function ModalityDropzone({
       "application/octet-stream": [".nii", ".nii.gz"],
     },
     maxFiles: 1,
-    disabled,
+    disabled: disabled || isHosted,
     onDragEnter,
     onDragLeave,
+    noClick: isHosted,
+    noDrag: isHosted,
   });
+
+  const rootProps = getRootProps();
 
   if (file) {
     return (
@@ -208,15 +235,16 @@ function ModalityDropzone({
 
   return (
     <div
-      {...getRootProps()}
+      {...rootProps}
+      onClick={isHosted ? handleClick : rootProps.onClick}
       className={`
         border-2 border-dashed rounded-lg p-4 text-center cursor-pointer
         transition-all duration-200
         ${isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-gray-400"}
-        ${disabled ? "opacity-50 cursor-not-allowed" : ""}
+        ${disabled || isHosted ? "opacity-50 cursor-not-allowed" : ""}
       `}
     >
-      <input {...getInputProps()} />
+      <input {...getInputProps()} disabled={isHosted} />
       <div className="space-y-2">
         <span className="inline-block px-3 py-1 bg-gray-100 rounded-full text-sm font-medium text-gray-700">
           {modality.label}
