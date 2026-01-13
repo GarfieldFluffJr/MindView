@@ -56,8 +56,14 @@ export default function Home() {
   // Fetch metadata when jobId changes and we're in viewing state
   useEffect(() => {
     if (jobId && state === "viewing") {
+      console.log("[METADATA FETCH] Starting fetch for jobId:", jobId);
       getMetadata(jobId)
         .then((data) => {
+          console.log("[METADATA FETCH] Success! Received data:", data);
+          console.log("[METADATA FETCH] Regions count:", data.regions?.length || 0);
+          console.log("[METADATA FETCH] Has tumor:", data.has_tumor);
+          console.log("[METADATA FETCH] First region (if any):", data.regions?.[0]);
+
           setMetadata(data);
           // Initialize region states from metadata (always visible by default)
           const initialStates: Record<string, RegionState> = {};
@@ -67,10 +73,12 @@ export default function Home() {
               opacity: region.opacity,
             };
           }
+          console.log("[METADATA FETCH] Initialized region states:", Object.keys(initialStates).length, "regions");
           setRegionStates(initialStates);
         })
         .catch((err) => {
-          console.error("Failed to fetch metadata:", err);
+          console.error("[METADATA FETCH] Error:", err);
+          console.error("[METADATA FETCH] Error details:", err.message);
         });
     }
   }, [jobId, state]);
@@ -439,6 +447,14 @@ export default function Home() {
 
               {/* Right Panel - Region Controls */}
               <div className="w-72 flex-shrink-0">
+                {(() => {
+                  console.log("[REGION CONTROLS] Checking render conditions:");
+                  console.log("[REGION CONTROLS] metadata exists:", !!metadata);
+                  console.log("[REGION CONTROLS] metadata.regions exists:", !!metadata?.regions);
+                  console.log("[REGION CONTROLS] metadata.regions.length:", metadata?.regions?.length || 0);
+                  console.log("[REGION CONTROLS] Should render:", !!(metadata && metadata.regions.length > 0));
+                  return null;
+                })()}
                 {metadata && metadata.regions.length > 0 && (
                   <RegionControls
                     regions={metadata.regions}
