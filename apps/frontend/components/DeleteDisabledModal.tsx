@@ -61,10 +61,10 @@ export default function DeleteDisabledModal({ isOpen, onClose }: DeleteDisabledM
 
           {/* Message */}
           <p className="text-gray-600">
-            Delete operations are currently disabled because our server is hosted on a free service and we want to preserve existing data for demonstration purposes.
+            Due to server upload restrictions, we've decided to also disable delete operations.
           </p>
           <p className="text-sm text-gray-500">
-            Please reach out to louieyin6@gmail.com if you need to delete data.
+            Please reach out to louieyin6@gmail.com for assistance.
           </p>
 
           {/* Close Button */}
