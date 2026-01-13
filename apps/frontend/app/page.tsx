@@ -248,7 +248,40 @@ export default function Home() {
         </header>
 
         {state === "patient-selection" && (
-          <PatientSelection onPatientSelected={handlePatientSelected} />
+          <>
+            <PatientSelection onPatientSelected={handlePatientSelected} />
+
+            {/* Server Notice Card */}
+            <div className="max-w-4xl mx-auto mt-6">
+              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 shadow-sm">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0">
+                    <svg
+                      className="w-6 h-6 text-yellow-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-yellow-900 mb-1">
+                      Please Note
+                    </h3>
+                    <p className="text-sm text-yellow-800">
+                      Our server is running on a free cloud provider. Loading times may take up to 2 minutes and certain control features may be disabled.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
         )}
 
         {state === "case-selection" && patientId !== null && (
